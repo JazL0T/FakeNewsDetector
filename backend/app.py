@@ -50,45 +50,57 @@ except Exception as e:
 
 # ------- DB -------
 def init_db():
-    """Initialize or auto-upgrade the SQLite user database."""
+    """Ensure the users database and table exist, auto-recreate if corrupted or missing."""
     db_path = app.config["DB_PATH"]
     recreate = False
 
-    # 1️⃣ Check if DB exists
+    # Check if DB exists and schema is valid
     if os.path.exists(db_path):
         try:
             with sqlite3.connect(db_path) as conn:
                 cur = conn.cursor()
                 cur.execute("PRAGMA table_info(users)")
                 cols = [c[1] for c in cur.fetchall()]
-
-                # 2️⃣ If schema is wrong (e.g., old column 'email'), mark for recreation
                 if "username" not in cols or "password" not in cols:
-                    logging.warning("⚠️ Outdated DB schema detected. Recreating users.db...")
+                    logging.warning("⚠️ Outdated or invalid DB schema detected. Recreating users.db...")
                     recreate = True
         except Exception as e:
-            logging.error(f"DB check failed: {e}")
+            logging.error(f"DB check failed ({e}), recreating...")
             recreate = True
     else:
         recreate = True
 
-    # 3️⃣ If needed, recreate the DB
+    # Recreate DB if needed
     if recreate:
-        if os.path.exists(db_path):
-            os.remove(db_path)
-        with sqlite3.connect(db_path) as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    username TEXT UNIQUE NOT NULL,
-                    password TEXT NOT NULL
-                )
-            """)
-            conn.commit()
-            logging.info("✅ users.db created or updated successfully.")
+        try:
+            if os.path.exists(db_path):
+                os.remove(db_path)
+            with sqlite3.connect(db_path) as conn:
+                conn.execute("""
+                    CREATE TABLE IF NOT EXISTS users (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        username TEXT UNIQUE NOT NULL,
+                        password TEXT NOT NULL
+                    )
+                """)
+                conn.commit()
+            logging.info("✅ users.db created successfully with correct schema.")
+        except Exception as e:
+            logging.error(f"❌ Failed to recreate users.db: {e}")
 
 def get_db_connection():
     return sqlite3.connect(app.config["DB_PATH"])
+
+# Call DB init at startup and log tables for sanity
+init_db()
+try:
+    with sqlite3.connect(app.config["DB_PATH"]) as _c:
+        _cur = _c.cursor()
+        _cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = [t[0] for t in _cur.fetchall()]
+        logging.info(f"🗄️ Existing tables: {tables}")
+except Exception as _e:
+    logging.error(f"Failed to list tables: {_e}")
 
 # ------- Helpers -------
 def tokenize_text(text: str) -> str:
@@ -123,7 +135,11 @@ def analyze_text_heuristics(text: str) -> dict:
     }
 
 def compute_trustability(url: str) -> dict:
-    domain = tldextract.extract(url).registered_domain or "unknown"
+    try:
+        domain = tldextract.extract(url or "").registered_domain or "unknown"
+    except Exception:
+        domain = "unknown"
+
     trusted_sources = ["bbc.com", "reuters.com", "apnews.com", "nytimes.com", "theguardian.com", "npr.org"]
     suspicious_markers = ["clickbait", "rumor", "gossip", "unknownblog", ".info", ".buzz", ".click"]
 
@@ -154,47 +170,57 @@ def safe_json(data: dict):
 def home():
     return jsonify({"message": "Fake News Detector API running ✅"})
 
-# Auth
+# ---- Auth (with safe JSON errors) ----
 @app.route("/register", methods=["POST"])
 def register():
-    data = request.get_json() or {}
-    username = data.get("username", "").strip()
-    password = data.get("password", "").strip()
-    if not username or not password:
-        return jsonify({"error": "Missing username or password"}), 400
-    hashed_pw = generate_password_hash(password)
     try:
+        data = request.get_json(force=True) or {}
+        username = data.get("username", "").strip()
+        password = data.get("password", "").strip()
+        if not username or not password:
+            return jsonify({"error": "Missing username or password"}), 400
+
+        hashed_pw = generate_password_hash(password)
         with get_db_connection() as conn:
             conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_pw))
             conn.commit()
+        logging.info(f"🟢 Registered new user: {username}")
         return jsonify({"message": "User registered successfully."})
     except sqlite3.IntegrityError:
         return jsonify({"error": "Username already exists."}), 400
+    except Exception as e:
+        logging.exception("❌ Registration error:")
+        return jsonify({"error": f"Internal error: {str(e)}"}), 500
 
 @app.route("/login", methods=["POST"])
 def login():
-    data = request.get_json() or {}
-    username = data.get("username", "").strip()
-    password = data.get("password", "").strip()
-    if not username or not password:
-        return jsonify({"error": "Missing username or password"}), 400
+    try:
+        data = request.get_json(force=True) or {}
+        username = data.get("username", "").strip()
+        password = data.get("password", "").strip()
+        if not username or not password:
+            return jsonify({"error": "Missing username or password"}), 400
 
-    with get_db_connection() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT password FROM users WHERE username = ?", (username,))
-        row = cur.fetchone()
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT password FROM users WHERE username = ?", (username,))
+            row = cur.fetchone()
 
-    if not row or not check_password_hash(row[0], password):
-        return jsonify({"error": "Invalid credentials"}), 401
+        if not row or not check_password_hash(row[0], password):
+            return jsonify({"error": "Invalid credentials"}), 401
 
-    token = jwt.encode({
-        "username": username,
-        "exp": datetime.utcnow() + timedelta(hours=2)
-    }, app.config["JWT_SECRET"], algorithm="HS256")
+        token = jwt.encode({
+            "username": username,
+            "exp": datetime.utcnow() + timedelta(hours=2)
+        }, app.config["JWT_SECRET"], algorithm="HS256")
 
-    return jsonify({"token": token, "username": username})
+        logging.info(f"🔑 User logged in: {username}")
+        return jsonify({"token": token, "username": username})
+    except Exception as e:
+        logging.exception("❌ Login error:")
+        return jsonify({"error": f"Internal error: {str(e)}"}), 500
 
-# Prediction (guest allowed)
+# ---- Prediction (guest allowed) ----
 @app.route("/predict", methods=["POST"])
 def predict():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -209,6 +235,9 @@ def predict():
         return jsonify({"error": "Missing text"}), 400
 
     ml = predict_fake_news(text)
+    if "error" in ml:
+        return jsonify(ml), 500
+
     heur = analyze_text_heuristics(text)
     trust = compute_trustability(url)
 
@@ -223,7 +252,7 @@ def predict():
         "trustability": trust
     })
 
-# Full report (JWT required)
+# ---- Full report (JWT required) ----
 @app.route("/full-report")
 def full_report():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -243,7 +272,6 @@ def full_report():
         """
         return html, 401
 
-    # Serve your structured full report file (placed in backend/templates/full-report.html)
     templates_dir = os.path.join(os.path.dirname(__file__), "templates")
     return send_from_directory(templates_dir, "full-report.html")
 
