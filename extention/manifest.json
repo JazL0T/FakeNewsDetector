@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Fake News Detector",
+  "version": "1.0",
+  "description": "Detects fake or real news on articles using a Flask backend hosted on Render.",
+  "permissions": ["activeTab", "storage", "scripting"],
+  "host_permissions": [
+    "*://*/*",
+    "https://fakenewsdetector101.onrender.com/*",
+    "http://127.0.0.1:5000/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["login.html", "register.html", "auth.css", "auth.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

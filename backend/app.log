@@ -1,0 +1,8 @@
+2025-10-31 20:04:11,898 INFO Model and vectorizer loaded successfully.
+2025-10-31 20:04:11,908 INFO Database initialized.
+2025-10-31 20:04:11,909 INFO Starting FakeNewsDetector on port 10000
+2025-10-31 20:04:11,925 INFO [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:10000
+ * Running on http://10.101.66.209:10000
+2025-10-31 20:04:11,926 INFO [33mPress CTRL+C to quit[0m

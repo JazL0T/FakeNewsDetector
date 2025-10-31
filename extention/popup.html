@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fake News Detector</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="wrap">
+    <h3>Fake News Detector</h3>
+
+    <!-- Latest scan / history -->
+    <div id="output">🔍 Waiting for scan...</div>
+
+    <!-- Buttons -->
+    <div id="report-btn-container">
+      <!-- Permanent scan button -->
+      <button id="scan-btn">🔍 Scan This Page</button>
+    </div>
+
+    <!-- Login / Logout -->
+    <button id="login-link" style="display:none;"></button>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
