@@ -50,16 +50,42 @@ except Exception as e:
 
 # ------- DB -------
 def init_db():
-    with sqlite3.connect(app.config["DB_PATH"]) as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL
-            )
-        """)
-        conn.commit()
-init_db()
+    """Initialize or auto-upgrade the SQLite user database."""
+    db_path = app.config["DB_PATH"]
+    recreate = False
+
+    # 1️⃣ Check if DB exists
+    if os.path.exists(db_path):
+        try:
+            with sqlite3.connect(db_path) as conn:
+                cur = conn.cursor()
+                cur.execute("PRAGMA table_info(users)")
+                cols = [c[1] for c in cur.fetchall()]
+
+                # 2️⃣ If schema is wrong (e.g., old column 'email'), mark for recreation
+                if "username" not in cols or "password" not in cols:
+                    logging.warning("⚠️ Outdated DB schema detected. Recreating users.db...")
+                    recreate = True
+        except Exception as e:
+            logging.error(f"DB check failed: {e}")
+            recreate = True
+    else:
+        recreate = True
+
+    # 3️⃣ If needed, recreate the DB
+    if recreate:
+        if os.path.exists(db_path):
+            os.remove(db_path)
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    username TEXT UNIQUE NOT NULL,
+                    password TEXT NOT NULL
+                )
+            """)
+            conn.commit()
+            logging.info("✅ users.db created or updated successfully.")
 
 def get_db_connection():
     return sqlite3.connect(app.config["DB_PATH"])
