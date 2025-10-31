@@ -5,7 +5,7 @@
 import warnings
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 
-from flask import Flask, request, jsonify, render_template_string, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import joblib
 import re
@@ -20,7 +20,9 @@ from textblob import TextBlob
 from dotenv import load_dotenv
 import tldextract
 
-# ------- Config -------
+# ==============================================================
+# CONFIGURATION
+# ==============================================================
 load_dotenv()
 app = Flask(__name__)
 CORS(app, origins=["*"])
@@ -32,14 +34,18 @@ app.config["DB_PATH"] = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file
 MODEL_PATH = os.getenv("MODEL_PATH", os.path.join(os.path.dirname(__file__), "models", "model2.pkl"))
 VECTORIZER_PATH = os.getenv("VECTORIZER_PATH", os.path.join(os.path.dirname(__file__), "models", "vectorizer2.pkl"))
 
-# ------- Logging -------
+# ==============================================================
+# LOGGING
+# ==============================================================
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 
-# ------- Load ML -------
+# ==============================================================
+# LOAD MODEL + VECTORIZER
+# ==============================================================
 try:
     model = joblib.load(MODEL_PATH)
     vectorizer = joblib.load(VECTORIZER_PATH)
@@ -48,13 +54,14 @@ except Exception as e:
     logging.error(f"❌ Failed to load model/vectorizer: {e}")
     model, vectorizer = None, None
 
-# ------- DB -------
+# ==============================================================
+# DATABASE INITIALIZATION
+# ==============================================================
 def init_db():
-    """Ensure the users database and table exist, auto-recreate if corrupted or missing."""
+    """Ensure users.db exists and has the correct schema."""
     db_path = app.config["DB_PATH"]
     recreate = False
 
-    # Check if DB exists and schema is valid
     if os.path.exists(db_path):
         try:
             with sqlite3.connect(db_path) as conn:
@@ -70,7 +77,6 @@ def init_db():
     else:
         recreate = True
 
-    # Recreate DB if needed
     if recreate:
         try:
             if os.path.exists(db_path):
@@ -91,7 +97,7 @@ def init_db():
 def get_db_connection():
     return sqlite3.connect(app.config["DB_PATH"])
 
-# Call DB init at startup and log tables for sanity
+# Initialize DB on startup
 init_db()
 try:
     with sqlite3.connect(app.config["DB_PATH"]) as _c:
@@ -102,7 +108,9 @@ try:
 except Exception as _e:
     logging.error(f"Failed to list tables: {_e}")
 
-# ------- Helpers -------
+# ==============================================================
+# HELPERS
+# ==============================================================
 def tokenize_text(text: str) -> str:
     text = re.sub(r"http\S+|www\S+|https\S+", "", text)
     text = re.sub(r"[^a-zA-Z\s]", "", text)
@@ -165,18 +173,22 @@ def verify_jwt(token: str):
 def safe_json(data: dict):
     return jsonify(json.loads(json.dumps(data, default=str)))
 
-# ------- Routes -------
+# ==============================================================
+# ROUTES
+# ==============================================================
+
 @app.route("/")
 def home():
     return jsonify({"message": "Fake News Detector API running ✅"})
 
-# ---- Auth (with safe JSON errors) ----
+# ------------------ AUTH ------------------
 @app.route("/register", methods=["POST"])
 def register():
     try:
         data = request.get_json(force=True) or {}
         username = data.get("username", "").strip()
         password = data.get("password", "").strip()
+
         if not username or not password:
             return jsonify({"error": "Missing username or password"}), 400
 
@@ -186,6 +198,7 @@ def register():
             conn.commit()
         logging.info(f"🟢 Registered new user: {username}")
         return jsonify({"message": "User registered successfully."})
+
     except sqlite3.IntegrityError:
         return jsonify({"error": "Username already exists."}), 400
     except Exception as e:
@@ -198,6 +211,7 @@ def login():
         data = request.get_json(force=True) or {}
         username = data.get("username", "").strip()
         password = data.get("password", "").strip()
+
         if not username or not password:
             return jsonify({"error": "Missing username or password"}), 400
 
@@ -216,11 +230,12 @@ def login():
 
         logging.info(f"🔑 User logged in: {username}")
         return jsonify({"token": token, "username": username})
+
     except Exception as e:
         logging.exception("❌ Login error:")
         return jsonify({"error": f"Internal error: {str(e)}"}), 500
 
-# ---- Prediction (guest allowed) ----
+# ------------------ PREDICTION ------------------
 @app.route("/predict", methods=["POST"])
 def predict():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -252,12 +267,14 @@ def predict():
         "trustability": trust
     })
 
-# ---- Full report (JWT required) ----
+# ------------------ FULL REPORT ------------------
 @app.route("/full-report")
 def full_report():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
-    username = verify_jwt(token)
+    if not token:
+        token = request.args.get("token", "")  # ✅ allow token in URL query
 
+    username = verify_jwt(token)
     if not username:
         html = """
         <!DOCTYPE html><html><head><meta charset="utf-8">
@@ -275,7 +292,9 @@ def full_report():
     templates_dir = os.path.join(os.path.dirname(__file__), "templates")
     return send_from_directory(templates_dir, "full-report.html")
 
-# ------- Main -------
+# ==============================================================
+# MAIN ENTRY POINT
+# ==============================================================
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     logging.info(f"🚀 Server running on http://0.0.0.0:{port}")
