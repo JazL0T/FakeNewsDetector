@@ -1,5 +1,5 @@
 # ==============================================================
-# Fake News Detector API (Final Secure Version - Render Ready)
+#  Fake News Detector API (Final Secure + Full Report Fix)
 # ==============================================================
 
 import warnings
@@ -7,12 +7,7 @@ warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
-import joblib
-import re
-import os
-import sqlite3
-import logging
-import json
+import joblib, re, os, sqlite3, logging, json
 from datetime import datetime, timedelta
 import jwt
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -21,9 +16,10 @@ from dotenv import load_dotenv
 import tldextract
 
 # ==============================================================
-# CONFIGURATION
+#  CONFIGURATION
 # ==============================================================
 load_dotenv()
+
 app = Flask(__name__)
 CORS(app, origins=["*"])
 
@@ -35,7 +31,7 @@ MODEL_PATH = os.getenv("MODEL_PATH", os.path.join(os.path.dirname(__file__), "mo
 VECTORIZER_PATH = os.getenv("VECTORIZER_PATH", os.path.join(os.path.dirname(__file__), "models", "vectorizer2.pkl"))
 
 # ==============================================================
-# LOGGING
+#  LOGGING
 # ==============================================================
 logging.basicConfig(
     level=logging.INFO,
@@ -44,7 +40,7 @@ logging.basicConfig(
 )
 
 # ==============================================================
-# LOAD MODEL + VECTORIZER
+#  MODEL LOAD
 # ==============================================================
 try:
     model = joblib.load(MODEL_PATH)
@@ -55,10 +51,9 @@ except Exception as e:
     model, vectorizer = None, None
 
 # ==============================================================
-# DATABASE INITIALIZATION
+#  DATABASE
 # ==============================================================
 def init_db():
-    """Ensure users.db exists and has the correct schema."""
     db_path = app.config["DB_PATH"]
     recreate = False
 
@@ -69,7 +64,6 @@ def init_db():
                 cur.execute("PRAGMA table_info(users)")
                 cols = [c[1] for c in cur.fetchall()]
                 if "username" not in cols or "password" not in cols:
-                    logging.warning("⚠️ Outdated or invalid DB schema detected. Recreating users.db...")
                     recreate = True
         except Exception as e:
             logging.error(f"DB check failed ({e}), recreating...")
@@ -97,19 +91,10 @@ def init_db():
 def get_db_connection():
     return sqlite3.connect(app.config["DB_PATH"])
 
-# Initialize DB on startup
 init_db()
-try:
-    with sqlite3.connect(app.config["DB_PATH"]) as _c:
-        _cur = _c.cursor()
-        _cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-        tables = [t[0] for t in _cur.fetchall()]
-        logging.info(f"🗄️ Existing tables: {tables}")
-except Exception as _e:
-    logging.error(f"Failed to list tables: {_e}")
 
 # ==============================================================
-# HELPERS
+#  HELPERS
 # ==============================================================
 def tokenize_text(text: str) -> str:
     text = re.sub(r"http\S+|www\S+|https\S+", "", text)
@@ -134,7 +119,9 @@ def analyze_text_heuristics(text: str) -> dict:
     words = text.split()
     uppercase_ratio = sum(1 for w in words if w.isupper()) / max(1, len(words))
     exclamations = text.count("!")
-    fake_score = (0.4 * (1 - abs(sentiment)) + 0.3 * uppercase_ratio + 0.3 * min(exclamations / 5, 1))
+    fake_score = (0.4 * (1 - abs(sentiment)) +
+                  0.3 * uppercase_ratio +
+                  0.3 * min(exclamations / 5, 1))
     return {
         "sentiment": sentiment,
         "uppercase_ratio": uppercase_ratio,
@@ -143,21 +130,18 @@ def analyze_text_heuristics(text: str) -> dict:
     }
 
 def compute_trustability(url: str) -> dict:
-    try:
-        domain = tldextract.extract(url or "").registered_domain or "unknown"
-    except Exception:
-        domain = "unknown"
-
-    trusted_sources = ["bbc.com", "reuters.com", "apnews.com", "nytimes.com", "theguardian.com", "npr.org"]
+    domain = tldextract.extract(url).registered_domain or "unknown"
+    trusted_sources = [
+        "bbc.com", "reuters.com", "apnews.com", "nytimes.com",
+        "theguardian.com", "npr.org"
+    ]
     suspicious_markers = ["clickbait", "rumor", "gossip", "unknownblog", ".info", ".buzz", ".click"]
 
     score = 50
     if any(src in domain for src in trusted_sources):
-        score = 90
-        category = "Trusted"
+        score, category = 90, "Trusted"
     elif any(m in domain for m in suspicious_markers):
-        score = 30
-        category = "Suspicious"
+        score, category = 30, "Suspicious"
     else:
         category = "Uncertain"
 
@@ -174,68 +158,54 @@ def safe_json(data: dict):
     return jsonify(json.loads(json.dumps(data, default=str)))
 
 # ==============================================================
-# ROUTES
+#  ROUTES
 # ==============================================================
-
 @app.route("/")
 def home():
     return jsonify({"message": "Fake News Detector API running ✅"})
 
-# ------------------ AUTH ------------------
+# -------------------- AUTH --------------------
 @app.route("/register", methods=["POST"])
 def register():
+    data = request.get_json() or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    if not username or not password:
+        return jsonify({"error": "Missing username or password"}), 400
+
+    hashed_pw = generate_password_hash(password)
     try:
-        data = request.get_json(force=True) or {}
-        username = data.get("username", "").strip()
-        password = data.get("password", "").strip()
-
-        if not username or not password:
-            return jsonify({"error": "Missing username or password"}), 400
-
-        hashed_pw = generate_password_hash(password)
         with get_db_connection() as conn:
             conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_pw))
             conn.commit()
-        logging.info(f"🟢 Registered new user: {username}")
         return jsonify({"message": "User registered successfully."})
-
     except sqlite3.IntegrityError:
         return jsonify({"error": "Username already exists."}), 400
-    except Exception as e:
-        logging.exception("❌ Registration error:")
-        return jsonify({"error": f"Internal error: {str(e)}"}), 500
 
 @app.route("/login", methods=["POST"])
 def login():
-    try:
-        data = request.get_json(force=True) or {}
-        username = data.get("username", "").strip()
-        password = data.get("password", "").strip()
+    data = request.get_json() or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    if not username or not password:
+        return jsonify({"error": "Missing username or password"}), 400
 
-        if not username or not password:
-            return jsonify({"error": "Missing username or password"}), 400
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT password FROM users WHERE username = ?", (username,))
+        row = cur.fetchone()
 
-        with get_db_connection() as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT password FROM users WHERE username = ?", (username,))
-            row = cur.fetchone()
+    if not row or not check_password_hash(row[0], password):
+        return jsonify({"error": "Invalid credentials"}), 401
 
-        if not row or not check_password_hash(row[0], password):
-            return jsonify({"error": "Invalid credentials"}), 401
+    token = jwt.encode({
+        "username": username,
+        "exp": datetime.utcnow() + timedelta(hours=2)
+    }, app.config["JWT_SECRET"], algorithm="HS256")
 
-        token = jwt.encode({
-            "username": username,
-            "exp": datetime.utcnow() + timedelta(hours=2)
-        }, app.config["JWT_SECRET"], algorithm="HS256")
+    return jsonify({"token": token, "username": username})
 
-        logging.info(f"🔑 User logged in: {username}")
-        return jsonify({"token": token, "username": username})
-
-    except Exception as e:
-        logging.exception("❌ Login error:")
-        return jsonify({"error": f"Internal error: {str(e)}"}), 500
-
-# ------------------ PREDICTION ------------------
+# -------------------- PREDICT --------------------
 @app.route("/predict", methods=["POST"])
 def predict():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -250,9 +220,6 @@ def predict():
         return jsonify({"error": "Missing text"}), 400
 
     ml = predict_fake_news(text)
-    if "error" in ml:
-        return jsonify(ml), 500
-
     heur = analyze_text_heuristics(text)
     trust = compute_trustability(url)
 
@@ -267,14 +234,13 @@ def predict():
         "trustability": trust
     })
 
-# ------------------ FULL REPORT ------------------
+# -------------------- FULL REPORT --------------------
 @app.route("/full-report")
 def full_report():
-    token = request.headers.get("Authorization", "").replace("Bearer ", "")
-    if not token:
-        token = request.args.get("token", "")  # ✅ allow token in URL query
-
+    # ✅ Read token from query param or header
+    token = request.args.get("token") or request.headers.get("Authorization", "").replace("Bearer ", "")
     username = verify_jwt(token)
+
     if not username:
         html = """
         <!DOCTYPE html><html><head><meta charset="utf-8">
@@ -290,10 +256,11 @@ def full_report():
         return html, 401
 
     templates_dir = os.path.join(os.path.dirname(__file__), "templates")
+    logging.info(f"✅ Full report opened by {username}")
     return send_from_directory(templates_dir, "full-report.html")
 
 # ==============================================================
-# MAIN ENTRY POINT
+#  MAIN
 # ==============================================================
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
