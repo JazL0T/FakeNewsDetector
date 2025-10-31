@@ -173,10 +173,16 @@ def login():
     logging.info(f"🔑 User logged in: {email}")
     return jsonify({"token": token, "email": email})
 
-# -------------------- SCAN ROUTE --------------------
+# -------------------- SCAN ROUTE (sentence-level) --------------------
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
+        # Verify JWT
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
+        email = verify_jwt(token)
+        if not email:
+            return jsonify({"error": "Unauthorized"}), 401
+
         data = request.get_json() or {}
         text = data.get("text", "")
         headline = data.get("headline", "")
@@ -185,11 +191,23 @@ def predict():
         if not text:
             return jsonify({"error": "Missing text"}), 400
 
+        # Whole text prediction
         ml_result = predict_fake_news(text)
         heuristics = analyze_text_heuristics(text)
 
-        if "error" in ml_result:
-            return jsonify(ml_result), 500
+        # Sentence-level predictions
+        blob = TextBlob(text)
+        sentences = []
+        for sent in blob.sentences:
+            sent_text = str(sent)
+            sent_pred = predict_fake_news(sent_text)
+            if "error" in sent_pred:
+                continue
+            sentences.append({
+                "text": sent_text,
+                "prediction": "Fake" if sent_pred["prediction"] == "0" else "Real",
+                "confidence": sent_pred["confidence"]
+            })
 
         response = {
             "headline": headline,
@@ -197,8 +215,10 @@ def predict():
             "prediction": "Fake" if ml_result["prediction"] == "0" else "Real",
             "confidence": ml_result["confidence"],
             "class_probs": ml_result["class_probs"],
-            "heuristics": heuristics
+            "heuristics": heuristics,
+            "sentences": sentences
         }
+
         logging.info(f"🧠 Scan complete: {headline or '[No Headline]'} ({response['prediction']})")
         return safe_json(response)
 
