@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Full Report - Fake News Detector</title>
+  <style>
+    body {
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: #f5f8ff;
+      color: #333;
+      margin: 40px;
+    }
+    .container {
+      max-width: 900px;
+      margin: auto;
+      background: white;
+      padding: 30px;
+      border-radius: 14px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    h2 {
+      color: #1565c0;
+      text-align: center;
+      margin-top: 0;
+    }
+    p.desc {
+      text-align: center;
+      color: #555;
+      font-size: 14px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #e3f2fd;
+    }
+    tr.expandable:hover {
+      background: #f1f8ff;
+      cursor: pointer;
+    }
+    .details {
+      display: none;
+      background: #fafafa;
+      border-left: 4px solid #1976d2;
+      padding: 10px;
+      border-radius: 8px;
+      margin: 10px 0;
+    }
+    .trusted { color: #2e7d32; font-weight: 600; }
+    .suspicious { color: #e53935; font-weight: 600; }
+    .uncertain { color: #f9a825; font-weight: 600; }
+    .section-title {
+      font-weight: bold;
+      color: #1565c0;
+      margin-top: 10px;
+      margin-bottom: 4px;
+    }
+    .sentences {
+      margin-top: 6px;
+      border-left: 3px solid #90caf9;
+      padding-left: 10px;
+    }
+    .sentence {
+      margin-bottom: 6px;
+      font-size: 13px;
+    }
+    .pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 8px;
+      color: white;
+      font-size: 12px;
+      font-weight: 600;
+      margin-left: 5px;
+    }
+    .footer-note {
+      font-size: 13px;
+      color: #555;
+      text-align: center;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>🧠 Fake News Detector — Full Report</h2>
+    <p class="desc">
+      This report lists your past scans saved from the browser extension.<br>
+      Click a row to expand and view detailed analysis.
+    </p>
+
+    <table id="summary-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Headline</th>
+          <th>Prediction</th>
+          <th>Confidence</th>
+          <th>Trust Category</th>
+          <th>Trust Score</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <p class="footer-note">
+      ⚠️ This data is stored locally in your browser (not on the server).
+    </p>
+  </div>
+
+  <script>
+    async function loadReport() {
+      const data = await chrome.storage.local.get(null);
+      const tbody = document.querySelector("#summary-table tbody");
+      tbody.innerHTML = "";
+
+      const keys = Object.keys(data).filter(k => k.startsWith("fnd_history_"));
+      for (const key of keys) {
+        const history = data[key];
+        if (!Array.isArray(history)) continue;
+        for (const item of history) {
+          const trust = item.trustability || {};
+          const cat = trust.category || "—";
+          const catClass =
+            cat === "Trusted" ? "trusted" :
+            cat === "Suspicious" ? "suspicious" :
+            cat === "Uncertain" ? "uncertain" : "";
+
+          const tr = document.createElement("tr");
+          tr.classList.add("expandable");
+          tr.innerHTML = `
+            <td>${new Date(item.ts).toLocaleString()}</td>
+            <td>${item.headline || "(No Headline)"}</td>
+            <td>${item.prediction}</td>
+            <td>${(item.confidence * 100).toFixed(1)}%</td>
+            <td class="${catClass}">${cat}</td>
+            <td>${trust.trust_score ?? "—"}</td>
+          `;
+
+          const details = document.createElement("tr");
+          const detailsTd = document.createElement("td");
+          detailsTd.colSpan = 6;
+          detailsTd.innerHTML = generateDetails(item);
+          details.appendChild(detailsTd);
+          details.classList.add("details");
+
+          tr.addEventListener("click", () => {
+            const visible = details.style.display === "table-row";
+            details.style.display = visible ? "none" : "table-row";
+          });
+
+          tbody.appendChild(tr);
+          tbody.appendChild(details);
+        }
+      }
+    }
+
+    function generateDetails(item) {
+      const h = item.heuristics || {};
+      const t = item.trustability || {};
+      let html = `<div class="details-content">
+        <div class="section-title">Heuristics</div>
+        <ul style="margin:0 0 6px 14px;font-size:13px;">
+          <li>Sentiment: <strong>${(h.sentiment ?? 0).toFixed(3)}</strong></li>
+          <li>Uppercase Ratio: <strong>${(h.uppercase_ratio ?? 0).toFixed(3)}</strong></li>
+          <li>Exclamations: <strong>${h.exclamations ?? 0}</strong></li>
+          <li>Fake Score: <strong>${(h.fake_score ?? 0).toFixed(3)}</strong></li>
+        </ul>
+
+        <div class="section-title">Website Trustability</div>
+        <ul style="margin:0 0 6px 14px;font-size:13px;">
+          <li>Domain: <strong>${t.domain || "—"}</strong></li>
+          <li>Trust Score: <strong>${t.trust_score ?? "—"}</strong></li>
+          <li>Category: <strong>${t.category || "—"}</strong></li>
+        </ul>
+      `;
+
+      if (item.sentences && item.sentences.length > 0) {
+        html += `<div class="section-title">Sentence Analysis</div><div class="sentences">`;
+        for (const s of item.sentences) {
+          const color =
+            s.prediction === "Fake" ? "#e53935" :
+            s.prediction === "Real" ? "#2e7d32" : "#777";
+          html += `
+            <div class="sentence">
+              ${s.text}
+              <span class="pill" style="background:${color};">${s.prediction}</span>
+              <span style="font-size:12px;color:#555;">Confidence: ${(s.confidence * 100).toFixed(1)}%</span>
+            </div>`;
+        }
+        html += "</div>";
+      }
+
+      html += "</div>";
+      return html;
+    }
+
+    loadReport();
+  </script>
+</body>
+</html>
