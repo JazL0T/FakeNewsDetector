@@ -26,8 +26,8 @@ app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "supersecretkey")
 app.config["JWT_SECRET"] = os.getenv("JWT_SECRET", "jwt_secret")
 app.config["DB_PATH"] = os.getenv("DB_PATH", "users.db")
 
-MODEL_PATH = os.getenv("MODEL_PATH", os.path.join(os.path.dirname(__file__), "model2.pkl"))
-VECTORIZER_PATH = os.getenv("VECTORIZER_PATH", os.path.join(os.path.dirname(__file__), "vectorizer2.pkl"))
+MODEL_PATH = os.getenv("MODEL_PATH", os.path.join(os.path.dirname(__file__), "models", "model2.pkl"))
+VECTORIZER_PATH = os.getenv("VECTORIZER_PATH", os.path.join(os.path.dirname(__file__), "models", "vectorizer2.pkl"))
 
 # -------------------- LOGGING --------------------
 logging.basicConfig(
