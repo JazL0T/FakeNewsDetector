@@ -1,210 +1,312 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Full Report - Fake News Detector</title>
+  <meta charset="UTF-8" />
+  <title>Fake News Detector - Full Report</title>
   <style>
     body {
       font-family: "Segoe UI", Arial, sans-serif;
-      background: #f5f8ff;
-      color: #333;
-      margin: 40px;
+      background-color: #f6f9ff;
+      color: #222;
+      margin: 0;
+      padding: 0;
     }
-    .container {
+
+    header {
+      background-color: #1565c0;
+      color: white;
+      padding: 16px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    header h1 {
+      font-size: 20px;
+      margin: 0;
+    }
+
+    .username {
+      font-weight: 600;
+      font-size: 14px;
+    }
+
+    main {
       max-width: 900px;
-      margin: auto;
+      margin: 28px auto;
       background: white;
-      padding: 30px;
-      border-radius: 14px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+      padding: 28px;
     }
+
     h2 {
       color: #1565c0;
-      text-align: center;
-      margin-top: 0;
+      border-bottom: 2px solid #1565c0;
+      padding-bottom: 6px;
+      margin-top: 24px;
     }
-    p.desc {
-      text-align: center;
-      color: #555;
+
+    .section {
+      margin-bottom: 28px;
+    }
+
+    .keyval {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      row-gap: 6px;
       font-size: 14px;
     }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 20px;
-      font-size: 14px;
-    }
-    th, td {
-      border: 1px solid #ccc;
-      padding: 10px;
-      text-align: left;
-      vertical-align: top;
-    }
-    th {
-      background: #e3f2fd;
-    }
-    tr.expandable:hover {
-      background: #f1f8ff;
-      cursor: pointer;
-    }
-    .details {
-      display: none;
-      background: #fafafa;
-      border-left: 4px solid #1976d2;
-      padding: 10px;
-      border-radius: 8px;
-      margin: 10px 0;
-    }
-    .trusted { color: #2e7d32; font-weight: 600; }
-    .suspicious { color: #e53935; font-weight: 600; }
-    .uncertain { color: #f9a825; font-weight: 600; }
-    .section-title {
-      font-weight: bold;
-      color: #1565c0;
-      margin-top: 10px;
-      margin-bottom: 4px;
-    }
-    .sentences {
-      margin-top: 6px;
-      border-left: 3px solid #90caf9;
-      padding-left: 10px;
-    }
-    .sentence {
-      margin-bottom: 6px;
-      font-size: 13px;
-    }
-    .pill {
-      display: inline-block;
-      padding: 2px 8px;
-      border-radius: 8px;
-      color: white;
-      font-size: 12px;
+
+    .keyval div:first-child {
       font-weight: 600;
-      margin-left: 5px;
+      color: #333;
     }
-    .footer-note {
-      font-size: 13px;
-      color: #555;
+
+    .prediction {
+      font-size: 18px;
+      font-weight: bold;
+      padding: 10px;
+      border-radius: 8px;
+      display: inline-block;
+      color: white;
+      margin-bottom: 10px;
+    }
+
+    .trusted {
+      background-color: #2e7d32;
+    }
+
+    .fake {
+      background-color: #e53935;
+    }
+
+    .uncertain {
+      background-color: #f9a825;
+    }
+
+    footer {
       text-align: center;
-      margin-top: 16px;
+      margin-top: 20px;
+      color: #666;
+      font-size: 13px;
+      padding-bottom: 16px;
+    }
+
+    #login-required {
+      display: none;
+      text-align: center;
+      padding: 50px;
+      color: #444;
+    }
+
+    #login-required h2 {
+      color: #c62828;
+    }
+
+    button {
+      background-color: #1565c0;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+
+    button:hover {
+      background-color: #0d47a1;
+    }
+
+    .divider {
+      height: 1px;
+      background: #ddd;
+      margin: 18px 0;
+    }
+
+    .article-box {
+      background: #f4f6fb;
+      border: 1px solid #d3d9f1;
+      border-radius: 10px;
+      padding: 16px;
+      max-height: 200px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      font-size: 13px;
+      line-height: 1.5;
+      color: #333;
+    }
+
+    .toggle-btn {
+      color: #1565c0;
+      cursor: pointer;
+      font-size: 13px;
+      text-decoration: underline;
+      margin-top: 8px;
+      display: inline-block;
     }
   </style>
 </head>
 <body>
-  <div class="container">
-    <h2>🧠 Fake News Detector — Full Report</h2>
-    <p class="desc">
-      This report lists your past scans saved from the browser extension.<br>
-      Click a row to expand and view detailed analysis.
-    </p>
+  <header>
+    <h1>📰 Fake News Detector</h1>
+    <div class="username" id="username-display"></div>
+  </header>
 
-    <table id="summary-table">
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Headline</th>
-          <th>Prediction</th>
-          <th>Confidence</th>
-          <th>Trust Category</th>
-          <th>Trust Score</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
+  <main id="report-main">
+    <section class="section">
+      <h2>Scan Summary</h2>
+      <div class="keyval">
+        <div>Headline:</div> <div id="headline">—</div>
+        <div>URL:</div> <div id="url">—</div>
+      </div>
 
-    <p class="footer-note">
-      ⚠️ This data is stored locally in your browser (not on the server).
-    </p>
+      <div id="article-section" style="margin-top:15px;">
+        <b>Scanned Text:</b>
+        <div class="article-box" id="scanned-text">—</div>
+        <span id="toggle-text" class="toggle-btn">Hide text</span>
+      </div>
+
+      <div id="prediction-container" style="margin-top:20px;">
+        <span id="prediction" class="prediction">Prediction: —</span>
+        <div><b>Confidence:</b> <span id="confidence">—</span></div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <section class="section">
+      <h2>Trustability</h2>
+      <div class="keyval">
+        <div>Domain:</div> <div id="domain">—</div>
+        <div>Trust Score:</div> <div id="trust-score">—</div>
+        <div>Category:</div> <div id="trust-category">—</div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <section class="section">
+      <h2>Heuristic Analysis</h2>
+      <div class="keyval">
+        <div>Sentiment Polarity:</div> <div id="sentiment">—</div>
+        <div>Uppercase Ratio:</div> <div id="uppercase">—</div>
+        <div>Exclamations:</div> <div id="exclamations">—</div>
+        <div>Fake Score:</div> <div id="fake-score">—</div>
+      </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <section class="section">
+      <h2>Verdict</h2>
+      <p id="verdict" style="font-size:16px;font-weight:600;">—</p>
+    </section>
+
+    <div style="text-align:center;">
+      <button id="back-btn">← Back to Extension</button>
+    </div>
+  </main>
+
+  <div id="login-required">
+    <h2>🔒 Login Required</h2>
+    <p>You must be logged in to view the full report.</p>
+    <button id="close-btn">Close</button>
   </div>
 
+  <footer>
+    Fake News Detector © 2025 — powered by AI and Heuristic Analysis
+  </footer>
+
   <script>
-    async function loadReport() {
-      const data = await chrome.storage.local.get(null);
-      const tbody = document.querySelector("#summary-table tbody");
-      tbody.innerHTML = "";
+    document.addEventListener("DOMContentLoaded", async () => {
+      const main = document.getElementById("report-main");
+      const loginRequired = document.getElementById("login-required");
+      const usernameDisplay = document.getElementById("username-display");
+      const closeBtn = document.getElementById("close-btn");
+      const backBtn = document.getElementById("back-btn");
 
-      const keys = Object.keys(data).filter(k => k.startsWith("fnd_history_"));
-      for (const key of keys) {
-        const history = data[key];
-        if (!Array.isArray(history)) continue;
-        for (const item of history) {
-          const trust = item.trustability || {};
-          const cat = trust.category || "—";
-          const catClass =
-            cat === "Trusted" ? "trusted" :
-            cat === "Suspicious" ? "suspicious" :
-            cat === "Uncertain" ? "uncertain" : "";
+      const headline = document.getElementById("headline");
+      const url = document.getElementById("url");
+      const scannedText = document.getElementById("scanned-text");
+      const toggleText = document.getElementById("toggle-text");
+      const prediction = document.getElementById("prediction");
+      const confidence = document.getElementById("confidence");
 
-          const tr = document.createElement("tr");
-          tr.classList.add("expandable");
-          tr.innerHTML = `
-            <td>${new Date(item.ts).toLocaleString()}</td>
-            <td>${item.headline || "(No Headline)"}</td>
-            <td>${item.prediction}</td>
-            <td>${(item.confidence * 100).toFixed(1)}%</td>
-            <td class="${catClass}">${cat}</td>
-            <td>${trust.trust_score ?? "—"}</td>
-          `;
+      const domain = document.getElementById("domain");
+      const trustScore = document.getElementById("trust-score");
+      const trustCategory = document.getElementById("trust-category");
 
-          const details = document.createElement("tr");
-          const detailsTd = document.createElement("td");
-          detailsTd.colSpan = 6;
-          detailsTd.innerHTML = generateDetails(item);
-          details.appendChild(detailsTd);
-          details.classList.add("details");
+      const sentiment = document.getElementById("sentiment");
+      const uppercase = document.getElementById("uppercase");
+      const exclamations = document.getElementById("exclamations");
+      const fakeScore = document.getElementById("fake-score");
 
-          tr.addEventListener("click", () => {
-            const visible = details.style.display === "table-row";
-            details.style.display = visible ? "none" : "table-row";
-          });
+      const verdict = document.getElementById("verdict");
 
-          tbody.appendChild(tr);
-          tbody.appendChild(details);
-        }
-      }
-    }
-
-    function generateDetails(item) {
-      const h = item.heuristics || {};
-      const t = item.trustability || {};
-      let html = `<div class="details-content">
-        <div class="section-title">Heuristics</div>
-        <ul style="margin:0 0 6px 14px;font-size:13px;">
-          <li>Sentiment: <strong>${(h.sentiment ?? 0).toFixed(3)}</strong></li>
-          <li>Uppercase Ratio: <strong>${(h.uppercase_ratio ?? 0).toFixed(3)}</strong></li>
-          <li>Exclamations: <strong>${h.exclamations ?? 0}</strong></li>
-          <li>Fake Score: <strong>${(h.fake_score ?? 0).toFixed(3)}</strong></li>
-        </ul>
-
-        <div class="section-title">Website Trustability</div>
-        <ul style="margin:0 0 6px 14px;font-size:13px;">
-          <li>Domain: <strong>${t.domain || "—"}</strong></li>
-          <li>Trust Score: <strong>${t.trust_score ?? "—"}</strong></li>
-          <li>Category: <strong>${t.category || "—"}</strong></li>
-        </ul>
-      `;
-
-      if (item.sentences && item.sentences.length > 0) {
-        html += `<div class="section-title">Sentence Analysis</div><div class="sentences">`;
-        for (const s of item.sentences) {
-          const color =
-            s.prediction === "Fake" ? "#e53935" :
-            s.prediction === "Real" ? "#2e7d32" : "#777";
-          html += `
-            <div class="sentence">
-              ${s.text}
-              <span class="pill" style="background:${color};">${s.prediction}</span>
-              <span style="font-size:12px;color:#555;">Confidence: ${(s.confidence * 100).toFixed(1)}%</span>
-            </div>`;
-        }
-        html += "</div>";
+      const { fnd_jwt, fnd_username } = await chrome.storage.local.get(["fnd_jwt", "fnd_username"]);
+      if (!fnd_jwt || !fnd_username) {
+        main.style.display = "none";
+        loginRequired.style.display = "block";
+        return;
       }
 
-      html += "</div>";
-      return html;
-    }
+      usernameDisplay.textContent = `👤 ${fnd_username}`;
 
-    loadReport();
+      // Get latest scan result
+      const key = "fnd_history_" + fnd_username;
+      const data = await chrome.storage.local.get([key]);
+      const history = Array.isArray(data[key]) ? data[key] : [];
+      const latest = history[0];
+
+      if (!latest) {
+        verdict.textContent = "No scan data found.";
+        return;
+      }
+
+      headline.textContent = latest.headline || "—";
+      url.textContent = latest.url || "—";
+      scannedText.textContent = latest.text || "(No text captured)";
+
+      toggleText.addEventListener("click", () => {
+        if (scannedText.style.display === "none") {
+          scannedText.style.display = "block";
+          toggleText.textContent = "Hide text";
+        } else {
+          scannedText.style.display = "none";
+          toggleText.textContent = "Show text";
+        }
+      });
+
+      prediction.textContent = latest.prediction || "—";
+      prediction.className = "prediction " +
+        (latest.prediction === "Fake" ? "fake" :
+         latest.prediction === "Real" ? "trusted" : "uncertain");
+
+      confidence.textContent = ((latest.confidence || 0) * 100).toFixed(1) + "%";
+
+      const trust = latest.trustability || {};
+      domain.textContent = trust.domain || "—";
+      trustScore.textContent = trust.trust_score || "—";
+      trustCategory.textContent = trust.category || "—";
+
+      const heur = latest.heuristics || {};
+      sentiment.textContent = heur.sentiment?.toFixed(3) ?? "—";
+      uppercase.textContent = heur.uppercase_ratio?.toFixed(3) ?? "—";
+      exclamations.textContent = heur.exclamations ?? "—";
+      fakeScore.textContent = heur.fake_score?.toFixed(3) ?? "—";
+
+      if (latest.prediction === "Fake" || trust.category === "Suspicious") {
+        verdict.textContent = "🔴 This article seems suspicious or fake. Verify using trusted sources.";
+      } else if (trust.category === "Uncertain") {
+        verdict.textContent = "🟡 The article’s reliability is uncertain — cross-check the information.";
+      } else {
+        verdict.textContent = "🟢 This article appears real and trustworthy.";
+      }
+
+      backBtn.addEventListener("click", () => window.close());
+      closeBtn.addEventListener("click", () => window.close());
+    });
   </script>
 </body>
 </html>
