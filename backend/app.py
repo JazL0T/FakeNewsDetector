@@ -195,10 +195,9 @@ def login():
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
+        # JWT is optional (guests allowed)
         token = request.headers.get("Authorization", "").replace("Bearer ", "")
-        username = verify_jwt(token)
-        if not username:
-            return jsonify({"error": "Unauthorized or expired token"}), 401
+        username = verify_jwt(token)  # None if invalid or missing
 
         data = request.get_json() or {}
         text = data.get("text", "")
@@ -208,9 +207,11 @@ def predict():
         if not text:
             return jsonify({"error": "Missing text"}), 400
 
+        # Run ML prediction
         ml_result = predict_fake_news(text)
         heuristics = analyze_text_heuristics(text)
 
+        # Sentence-level predictions
         blob = TextBlob(text)
         sentences = []
         for sent in blob.sentences:
@@ -224,8 +225,9 @@ def predict():
                 "confidence": sent_pred["confidence"]
             })
 
+        # Response payload
         response = {
-            "username": username,
+            "username": username or "guest",
             "headline": headline,
             "url": url,
             "prediction": "Fake" if ml_result["prediction"] == "0" else "Real",
@@ -235,7 +237,11 @@ def predict():
             "sentences": sentences
         }
 
-        logging.info(f"🧠 Scan complete for user {username}: {headline or '[No Headline]'} ({response['prediction']})")
+        logging.info(
+            f"🧠 Scan complete by {username or 'guest'}: "
+            f"{headline or '[No Headline]'} ({response['prediction']})"
+        )
+
         return safe_json(response)
 
     except Exception as e:
