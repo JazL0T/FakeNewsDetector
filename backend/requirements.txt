@@ -8,6 +8,9 @@ itsdangerous==2.2.0
 Jinja2==3.1.6
 MarkupSafe==3.0.3
 
+# ====== Production Server ======
+gunicorn==23.0.0
+
 # ====== Machine Learning ======
 joblib==1.5.2
 numpy==2.3.4
@@ -15,16 +18,23 @@ scikit-learn==1.7.2
 scipy==1.16.3
 threadpoolctl==3.6.0
 
-# ====== Text Analysis ======
+# ====== Text & NLP ======
 textblob==0.19.0
 nltk==3.9.2
 regex==2025.10.23
 tqdm==4.67.1
 
-# ====== Authentication & Utilities ======
+# ====== Authentication & Environment ======
 PyJWT==2.10.1
 python-dotenv==1.2.1
 
+# ====== Rate Limiting & Security ======
+flask-limiter==3.9.2
+
+# ====== Network & Domain Trust Analysis ======
+python-whois==0.9.5
+requests==2.32.3
+
 # ====== Optional: Ensure TextBlob corpora are downloaded ======
-# (Render will execute this during build or startup)
+# (You can trigger this manually or during Render build)
 # python -m textblob.download_corpora
