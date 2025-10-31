@@ -33,6 +33,7 @@ flask-limiter==3.9.2
 
 # ====== Network & Domain Trust Analysis ======
 python-whois==0.9.5
+tldextract==5.1.2
 requests==2.32.3
 
 # ====== Optional: Ensure TextBlob corpora are downloaded ======
