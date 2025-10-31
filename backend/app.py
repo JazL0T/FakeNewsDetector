@@ -1,6 +1,9 @@
-# app.py
+# ==============================================================
+#  Fake News Detector API (Render-ready, Username-based)
+# ==============================================================
+
 import warnings
-warnings.filterwarnings("ignore", category=SyntaxWarning)  # Suppress TextBlob warnings
+warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
@@ -16,27 +19,33 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from textblob import TextBlob
 from dotenv import load_dotenv
 
-# -------------------- CONFIG --------------------
-load_dotenv()  # Load .env if available
+# ==============================================================
+#  CONFIGURATION
+# ==============================================================
+load_dotenv()
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, origins=["*"])
 
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "supersecretkey")
 app.config["JWT_SECRET"] = os.getenv("JWT_SECRET", "jwt_secret")
-app.config["DB_PATH"] = os.getenv("DB_PATH", "users.db")
+app.config["DB_PATH"] = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "users.db"))
 
 MODEL_PATH = os.getenv("MODEL_PATH", os.path.join(os.path.dirname(__file__), "models", "model2.pkl"))
 VECTORIZER_PATH = os.getenv("VECTORIZER_PATH", os.path.join(os.path.dirname(__file__), "models", "vectorizer2.pkl"))
 
-# -------------------- LOGGING --------------------
+# ==============================================================
+#  LOGGING
+# ==============================================================
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 
-# -------------------- LOAD ML MODEL --------------------
+# ==============================================================
+#  LOAD MODEL + VECTORIZER
+# ==============================================================
 try:
     model = joblib.load(MODEL_PATH)
     vectorizer = joblib.load(VECTORIZER_PATH)
@@ -45,15 +54,16 @@ except Exception as e:
     logging.error(f"❌ Failed to load model/vectorizer: {e}")
     model, vectorizer = None, None
 
-# -------------------- DATABASE --------------------
-def init_db() -> None:
-    """Initialize the SQLite database and create tables if they don't exist."""
+# ==============================================================
+#  DATABASE SETUP
+# ==============================================================
+def init_db():
+    """Initialize SQLite user database."""
     with sqlite3.connect(app.config["DB_PATH"]) as conn:
-        c = conn.cursor()
-        c.execute("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT UNIQUE NOT NULL,
+                username TEXT UNIQUE NOT NULL,
                 password TEXT NOT NULL
             )
         """)
@@ -61,18 +71,20 @@ def init_db() -> None:
 
 init_db()
 
-def get_db_connection() -> sqlite3.Connection:
+def get_db_connection():
     return sqlite3.connect(app.config["DB_PATH"])
 
-# -------------------- HELPERS --------------------
+# ==============================================================
+#  HELPERS
+# ==============================================================
 def tokenize_text(text: str) -> str:
     """Clean and normalize input text."""
     text = re.sub(r"http\S+|www\S+|https\S+", "", text)
     text = re.sub(r"[^a-zA-Z\s]", "", text)
-    return text.lower()
+    return text.lower().strip()
 
 def predict_fake_news(text: str) -> dict:
-    """Predict whether the text is fake news using the ML model."""
+    """Predict fake vs real news using ML model."""
     if not model or not vectorizer:
         return {"error": "Model not loaded"}
 
@@ -89,7 +101,7 @@ def predict_fake_news(text: str) -> dict:
     }
 
 def analyze_text_heuristics(text: str) -> dict:
-    """Analyze text heuristics to compute a fake-score."""
+    """Analyze simple text heuristics."""
     blob = TextBlob(text)
     sentiment = blob.sentiment.polarity
     words = text.split()
@@ -102,6 +114,7 @@ def analyze_text_heuristics(text: str) -> dict:
         0.3 * uppercase_ratio +
         0.3 * min(exclamations / 5, 1)
     )
+
     return {
         "sentiment": sentiment,
         "uppercase_ratio": uppercase_ratio,
@@ -113,75 +126,79 @@ def safe_json(data: dict):
     """Ensure safe JSON serialization."""
     return jsonify(json.loads(json.dumps(data, default=str)))
 
-def verify_jwt(token: str) -> str | None:
-    """Verify JWT token and return email if valid."""
+def verify_jwt(token: str):
+    """Verify JWT token and return username if valid."""
     try:
         decoded = jwt.decode(token, app.config["JWT_SECRET"], algorithms=["HS256"])
-        return decoded.get("email")
+        return decoded.get("username")
     except jwt.ExpiredSignatureError:
         return None
     except jwt.InvalidTokenError:
         return None
 
-# -------------------- HOME ROUTE --------------------
+# ==============================================================
+#  ROUTES
+# ==============================================================
 @app.route("/")
 def home():
-    return "Fake News Detector API is running. Use /predict to scan text."
+    return jsonify({"message": "Fake News Detector API is running. Use /predict to scan text."})
 
 # -------------------- AUTH ROUTES --------------------
 @app.route("/register", methods=["POST"])
 def register():
     data = request.get_json() or {}
-    email = data.get("email", "").strip()
+    username = data.get("username", "").strip()
     password = data.get("password", "").strip()
 
-    if not email or not password:
-        return jsonify({"error": "Missing email or password"}), 400
+    if not username or not password:
+        return jsonify({"error": "Missing username or password"}), 400
 
     hashed_pw = generate_password_hash(password)
     try:
         with get_db_connection() as conn:
-            conn.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, hashed_pw))
+            conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_pw))
             conn.commit()
-        logging.info(f"🟢 Registered new user: {email}")
+        logging.info(f"🟢 Registered new user: {username}")
         return jsonify({"message": "User registered successfully."})
     except sqlite3.IntegrityError:
-        return jsonify({"error": "Email already registered."}), 400
+        return jsonify({"error": "Username already exists."}), 400
     except Exception as e:
-        logging.error(e)
+        logging.error(f"Database error: {e}")
         return jsonify({"error": "Internal error"}), 500
 
 @app.route("/login", methods=["POST"])
 def login():
     data = request.get_json() or {}
-    email = data.get("email", "").strip()
+    username = data.get("username", "").strip()
     password = data.get("password", "").strip()
+
+    if not username or not password:
+        return jsonify({"error": "Missing username or password"}), 400
 
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT password FROM users WHERE email = ?", (email,))
+        cur.execute("SELECT password FROM users WHERE username = ?", (username,))
         row = cur.fetchone()
 
     if not row or not check_password_hash(row[0], password):
         return jsonify({"error": "Invalid credentials"}), 401
 
     token = jwt.encode({
-        "email": email,
+        "username": username,
         "exp": datetime.utcnow() + timedelta(hours=2)
     }, app.config["JWT_SECRET"], algorithm="HS256")
 
-    logging.info(f"🔑 User logged in: {email}")
-    return jsonify({"token": token, "email": email})
+    logging.info(f"🔑 User logged in: {username}")
+    return jsonify({"token": token, "username": username})
 
-# -------------------- SCAN ROUTE (sentence-level) --------------------
+# -------------------- PREDICTION ROUTE --------------------
 @app.route("/predict", methods=["POST"])
 def predict():
     try:
-        # Verify JWT
         token = request.headers.get("Authorization", "").replace("Bearer ", "")
-        email = verify_jwt(token)
-        if not email:
-            return jsonify({"error": "Unauthorized"}), 401
+        username = verify_jwt(token)
+        if not username:
+            return jsonify({"error": "Unauthorized or expired token"}), 401
 
         data = request.get_json() or {}
         text = data.get("text", "")
@@ -191,11 +208,9 @@ def predict():
         if not text:
             return jsonify({"error": "Missing text"}), 400
 
-        # Whole text prediction
         ml_result = predict_fake_news(text)
         heuristics = analyze_text_heuristics(text)
 
-        # Sentence-level predictions
         blob = TextBlob(text)
         sentences = []
         for sent in blob.sentences:
@@ -210,6 +225,7 @@ def predict():
             })
 
         response = {
+            "username": username,
             "headline": headline,
             "url": url,
             "prediction": "Fake" if ml_result["prediction"] == "0" else "Real",
@@ -219,14 +235,14 @@ def predict():
             "sentences": sentences
         }
 
-        logging.info(f"🧠 Scan complete: {headline or '[No Headline]'} ({response['prediction']})")
+        logging.info(f"🧠 Scan complete for user {username}: {headline or '[No Headline]'} ({response['prediction']})")
         return safe_json(response)
 
     except Exception as e:
         logging.exception("❌ Prediction error:")
         return jsonify({"error": str(e)}), 500
 
-# -------------------- FULL REPORT --------------------
+# -------------------- FULL REPORT ROUTE --------------------
 @app.route("/full-report")
 def full_report():
     template = """
@@ -255,7 +271,9 @@ def full_report():
     """
     return render_template_string(template)
 
-# -------------------- ERROR HANDLER --------------------
+# ==============================================================
+#  ERROR HANDLERS
+# ==============================================================
 @app.errorhandler(404)
 def not_found(e):
     return jsonify({"error": "Not found"}), 404
@@ -265,8 +283,10 @@ def internal_error(e):
     logging.exception("Internal server error")
     return jsonify({"error": "Internal server error"}), 500
 
-# -------------------- MAIN --------------------
+# ==============================================================
+#  MAIN ENTRY POINT
+# ==============================================================
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
-    logging.info(f"🚀 Server running on http://127.0.0.1:{port}")
-    app.run(host="0.0.0.0", port=port, debug=True)
+    logging.info(f"🚀 Server running on http://0.0.0.0:{port}")
+    app.run(host="0.0.0.0", port=port, debug=False)
