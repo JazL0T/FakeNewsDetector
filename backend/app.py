@@ -19,7 +19,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from textblob import TextBlob
 from dotenv import load_dotenv
 
-# ============================================================== 
+# ==============================================================
 #  CONFIGURATION
 # ==============================================================
 load_dotenv()
@@ -34,7 +34,7 @@ except LookupError:
     download.download_all()
     logging.info("✅ TextBlob corpora downloaded successfully.")
 
-# ============================================================== 
+# ==============================================================
 #  FLASK APP SETUP
 # ==============================================================
 app = Flask(__name__)
@@ -47,7 +47,7 @@ app.config["DB_PATH"] = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file
 MODEL_PATH = os.getenv("MODEL_PATH", os.path.join(os.path.dirname(__file__), "models", "model2.pkl"))
 VECTORIZER_PATH = os.getenv("VECTORIZER_PATH", os.path.join(os.path.dirname(__file__), "models", "vectorizer2.pkl"))
 
-# ============================================================== 
+# ==============================================================
 #  LOGGING
 # ==============================================================
 logging.basicConfig(
@@ -56,7 +56,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 
-# ============================================================== 
+# ==============================================================
 #  LOAD MODEL + VECTORIZER
 # ==============================================================
 try:
@@ -67,7 +67,7 @@ except Exception as e:
     logging.error(f"❌ Failed to load model/vectorizer: {e}")
     model, vectorizer = None, None
 
-# ============================================================== 
+# ==============================================================
 #  DATABASE SETUP
 # ==============================================================
 def init_db():
@@ -87,7 +87,7 @@ init_db()
 def get_db_connection():
     return sqlite3.connect(app.config["DB_PATH"])
 
-# ============================================================== 
+# ==============================================================
 #  HELPERS
 # ==============================================================
 def tokenize_text(text: str) -> str:
@@ -149,7 +149,7 @@ def verify_jwt(token: str):
     except jwt.InvalidTokenError:
         return None
 
-# ============================================================== 
+# ==============================================================
 #  ROUTES
 # ==============================================================
 @app.route("/")
@@ -257,30 +257,9 @@ def predict():
 # -------------------- FULL REPORT --------------------
 @app.route("/full-report")
 def full_report():
-    template = """
-    <!DOCTYPE html>
-    <html lang='en'>
-    <head>
-      <meta charset='UTF-8'>
-      <title>Full Report - Fake News Detector</title>
-      <style>
-        body { font-family: Arial; margin: 40px; background:#f7f9fc; color:#333; }
-        .container { max-width: 800px; margin:auto; background:white; padding:30px; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.1);}
-        h2 { color:#1e5bc7; }
-      </style>
-    </head>
-    <body>
-      <div class='container'>
-        <h2>Fake News Detector - Full Report</h2>
-        <p>View your recent scans and their predictions below.</p>
-        <p><i>Data stored locally in your browser’s extension.</i></p>
-      </div>
-    </body>
-    </html>
-    """
-    return render_template_string(template)
+    return app.send_static_file("full-report.html")
 
-# ============================================================== 
+# ==============================================================
 #  ERROR HANDLERS
 # ==============================================================
 @app.errorhandler(404)
@@ -292,7 +271,7 @@ def internal_error(e):
     logging.exception("Internal server error")
     return jsonify({"error": "Internal server error"}), 500
 
-# ============================================================== 
+# ==============================================================
 #  MAIN ENTRY POINT
 # ==============================================================
 if __name__ == "__main__":
