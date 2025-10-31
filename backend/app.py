@@ -1,64 +1,64 @@
 # ==============================================================
-#  Fake News Detector API (Render-ready v3)
-#  - Keeps all previous features
-#  - Adds: Website Trustability Analysis
+# Fake News Detector API (Final Secure Version - Render Ready)
 # ==============================================================
 
 import warnings
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template_string, send_from_directory
 from flask_cors import CORS
-import joblib, re, os, sqlite3, logging, json, jwt, socket, requests
+import joblib
+import re
+import os
+import sqlite3
+import logging
+import json
 from datetime import datetime, timedelta
-from urllib.parse import urlparse
+import jwt
 from werkzeug.security import generate_password_hash, check_password_hash
 from textblob import TextBlob
 from dotenv import load_dotenv
+import tldextract
 
-# ===== CONFIG =====
-BASE_DIR = os.path.dirname(__file__)
-STATIC_DIR = os.path.join(BASE_DIR, "static")
-
+# ============================================================== #
+# CONFIGURATION
+# ============================================================== #
 load_dotenv()
-
-# Ensure TextBlob corpora
-import nltk
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    import textblob.download_corpora as download
-    logging.info("⬇️ Downloading missing TextBlob corpora...")
-    download.download_all()
-
-# Flask App
-app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="/static")
+app = Flask(__name__)
 CORS(app, origins=["*"])
 
-# Env Vars
-app.config.update(
-    SECRET_KEY=os.getenv("SECRET_KEY", "supersecretkey"),
-    JWT_SECRET=os.getenv("JWT_SECRET", "jwt_secret"),
-    DB_PATH=os.getenv("DB_PATH", os.path.join(BASE_DIR, "users.db")),
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "supersecretkey")
+app.config["JWT_SECRET"] = os.getenv("JWT_SECRET", "jwt_secret")
+app.config["DB_PATH"] = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "users.db"))
+
+MODEL_PATH = os.getenv("MODEL_PATH", os.path.join(os.path.dirname(__file__), "models", "model2.pkl"))
+VECTORIZER_PATH = os.getenv("VECTORIZER_PATH", os.path.join(os.path.dirname(__file__), "models", "vectorizer2.pkl"))
+
+# ============================================================== #
+# LOGGING
+# ============================================================== #
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
 )
 
-MODEL_PATH = os.getenv("MODEL_PATH", os.path.join(BASE_DIR, "models/model2.pkl"))
-VECTORIZER_PATH = os.getenv("VECTORIZER_PATH", os.path.join(BASE_DIR, "models/vectorizer2.pkl"))
-
-# ===== LOGGING =====
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-
-# ===== LOAD MODEL =====
+# ============================================================== #
+# LOAD MODEL
+# ============================================================== #
 try:
     model = joblib.load(MODEL_PATH)
     vectorizer = joblib.load(VECTORIZER_PATH)
     logging.info("✅ Model and vectorizer loaded successfully.")
 except Exception as e:
     logging.error(f"❌ Failed to load model/vectorizer: {e}")
-    model = vectorizer = None
+    model, vectorizer = None, None
 
-# ===== DB SETUP =====
+# ============================================================== #
+# DATABASE
+# ============================================================== #
 def init_db():
+    """Initialize the SQLite user database."""
     with sqlite3.connect(app.config["DB_PATH"]) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -68,43 +68,43 @@ def init_db():
             )
         """)
         conn.commit()
+
 init_db()
 
 def get_db_connection():
-    conn = sqlite3.connect(app.config["DB_PATH"], check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return sqlite3.connect(app.config["DB_PATH"])
 
-# ===== HELPERS =====
-def safe_json(data): return jsonify(json.loads(json.dumps(data, default=str)))
-def tokenize_text(text): return re.sub(r"[^a-zA-Z\s]", "", text.lower().strip())
+# ============================================================== #
+# HELPERS
+# ============================================================== #
+def tokenize_text(text: str) -> str:
+    """Clean and normalize text."""
+    text = re.sub(r"http\S+|www\S+|https\S+", "", text)
+    text = re.sub(r"[^a-zA-Z\s]", "", text)
+    return text.lower().strip()
 
-def verify_jwt(token: str):
-    try:
-        decoded = jwt.decode(token, app.config["JWT_SECRET"], algorithms=["HS256"])
-        return decoded.get("username")
-    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
-        return None
-
-# ===== MACHINE LEARNING PREDICTION =====
-def predict_fake_news(text):
+def predict_fake_news(text: str) -> dict:
+    """Predict fake vs real news using the model."""
     if not model or not vectorizer:
         return {"error": "Model not loaded"}
-    features = vectorizer.transform([tokenize_text(text)])
+    processed = tokenize_text(text)
+    features = vectorizer.transform([processed])
     prediction = model.predict(features)[0]
     probs = model.predict_proba(features)[0]
+    confidence = float(max(probs))
     return {
         "prediction": str(prediction),
-        "confidence": float(max(probs)),
-        "class_probs": {"0": float(probs[0]), "1": float(probs[1])},
+        "confidence": confidence,
+        "class_probs": {"0": float(probs[0]), "1": float(probs[1])}
     }
 
-# ===== HEURISTICS =====
-def analyze_text_heuristics(text):
+def analyze_text_heuristics(text: str) -> dict:
+    """Compute heuristic features."""
     blob = TextBlob(text)
     sentiment = blob.sentiment.polarity
     words = text.split()
-    uppercase_ratio = sum(1 for w in words if w.isupper()) / max(1, len(words))
+    word_count = len(words)
+    uppercase_ratio = sum(1 for w in words if w.isupper()) / max(1, word_count)
     exclamations = text.count("!")
     fake_score = (
         0.4 * (1 - abs(sentiment)) +
@@ -118,82 +118,53 @@ def analyze_text_heuristics(text):
         "fake_score": fake_score
     }
 
-# ===== TRUSTABILITY ANALYSIS =====
-TRUSTED_SOURCES = [
-    "bbc.com", "reuters.com", "apnews.com", "nytimes.com",
-    "theguardian.com", "npr.org", "bloomberg.com", "aljazeera.com",
-    "washingtonpost.com", "forbes.com", "cnbc.com"
-]
-SUSPICIOUS_TLDS = [".info", ".click", ".buzz", ".ru", ".top", ".xyz", ".blogspot.com"]
+def compute_trustability(url: str) -> dict:
+    """Basic website trustability estimation."""
+    domain = tldextract.extract(url).registered_domain or "unknown"
+    trusted_sources = ["bbc.com", "reuters.com", "cnn.com", "nytimes.com", "theguardian.com"]
+    suspicious_sources = ["clickbait", "rumor", "gossip", "unknownblog"]
 
-def analyze_domain_trust(url: str):
-    if not url:
-        return {"domain": None, "trust_score": 0, "category": "Unknown"}
+    trust_score = 50
+    category = "Uncertain"
 
+    if any(src in domain for src in trusted_sources):
+        trust_score = 90
+        category = "Trusted"
+    elif any(src in domain for src in suspicious_sources):
+        trust_score = 30
+        category = "Suspicious"
+
+    return {"domain": domain, "trust_score": trust_score, "category": category}
+
+def verify_jwt(token: str):
     try:
-        parsed = urlparse(url)
-        domain = parsed.netloc.lower().replace("www.", "")
-        score = 50  # baseline
+        decoded = jwt.decode(token, app.config["JWT_SECRET"], algorithms=["HS256"])
+        return decoded.get("username")
+    except jwt.ExpiredSignatureError:
+        return None
+    except jwt.InvalidTokenError:
+        return None
 
-        # Known reputable domains
-        if any(t in domain for t in TRUSTED_SOURCES):
-            score += 40
+def safe_json(data: dict):
+    return jsonify(json.loads(json.dumps(data, default=str)))
 
-        # Suspicious TLDs or patterns
-        if any(domain.endswith(t) for t in SUSPICIOUS_TLDS):
-            score -= 30
-
-        # Domain age (optional)
-        try:
-            import whois
-            w = whois.whois(domain)
-            if isinstance(w.creation_date, datetime):
-                age_years = (datetime.now() - w.creation_date).days / 365
-                if age_years < 1:
-                    score -= 10
-                elif age_years > 5:
-                    score += 5
-        except Exception:
-            pass  # WHOIS not critical
-
-        # DNS check
-        try:
-            socket.gethostbyname(domain)
-        except Exception:
-            score -= 20
-
-        # Bound score 0–100
-        score = max(0, min(score, 100))
-
-        # Label
-        category = (
-            "Trusted" if score >= 70 else
-            "Uncertain" if score >= 40 else
-            "Suspicious"
-        )
-
-        return {"domain": domain, "trust_score": score, "category": category}
-
-    except Exception as e:
-        logging.warning(f"Trust check error: {e}")
-        return {"domain": None, "trust_score": 0, "category": "Unknown"}
-
-# ===== ROUTES =====
+# ============================================================== #
+# ROUTES
+# ============================================================== #
 @app.route("/")
 def home():
-    return jsonify({"message": "Fake News Detector API running"})
+    return jsonify({"message": "Fake News Detector API running ✅"})
 
-@app.route("/health")
-def health():
-    return jsonify({"status": "ok", "version": "1.0.4"})
-
-# --- AUTH ---
+# ----- AUTH -----
 @app.route("/register", methods=["POST"])
 def register():
     data = request.get_json() or {}
-    username, password = data.get("username", "").strip(), data.get("password", "").strip()
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+
     if not username or not password:
         return jsonify({"error": "Missing username or password"}), 400
+
     hashed_pw = generate_password_hash(password)
     try:
         with get_db_connection() as conn:
@@ -206,75 +177,83 @@ def register():
 @app.route("/login", methods=["POST"])
 def login():
     data = request.get_json() or {}
-    username, password = data.get("username", "").strip(), data.get("password", "").strip()
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+
+    if not username or not password:
+        return jsonify({"error": "Missing username or password"}), 400
+
     with get_db_connection() as conn:
-        row = conn.execute("SELECT password FROM users WHERE username = ?", (username,)).fetchone()
+        cur = conn.cursor()
+        cur.execute("SELECT password FROM users WHERE username = ?", (username,))
+        row = cur.fetchone()
+
     if not row or not check_password_hash(row[0], password):
         return jsonify({"error": "Invalid credentials"}), 401
-    token = jwt.encode({"username": username, "exp": datetime.utcnow() + timedelta(hours=2)},
-                       app.config["JWT_SECRET"], algorithm="HS256")
+
+    token = jwt.encode({
+        "username": username,
+        "exp": datetime.utcnow() + timedelta(hours=2)
+    }, app.config["JWT_SECRET"], algorithm="HS256")
+
     return jsonify({"token": token, "username": username})
 
-# --- PREDICT (with Trustability) ---
+# ----- PREDICTION -----
 @app.route("/predict", methods=["POST"])
 def predict():
-    try:
-        token = request.headers.get("Authorization", "").replace("Bearer ", "")
-        username = verify_jwt(token)
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    username = verify_jwt(token)
+    data = request.get_json() or {}
+    text = data.get("text", "")
+    headline = data.get("headline", "")
+    url = data.get("url", "")
 
-        data = request.get_json() or {}
-        text, headline, url = data.get("text", ""), data.get("headline", ""), data.get("url", "")
-        if not text:
-            return jsonify({"error": "Missing text"}), 400
+    if not text:
+        return jsonify({"error": "Missing text"}), 400
 
-        ml_result = predict_fake_news(text)
-        heuristics = analyze_text_heuristics(text)
-        trustability = analyze_domain_trust(url)
+    ml_result = predict_fake_news(text)
+    heuristics = analyze_text_heuristics(text)
+    trust = compute_trustability(url)
 
-        # Sentence-level breakdown
-        blob = TextBlob(text)
-        sentences = []
-        for sent in blob.sentences:
-            stext = str(sent)
-            spred = predict_fake_news(stext)
-            if "error" in spred:
-                continue
-            sentences.append({
-                "text": stext,
-                "prediction": "Fake" if spred["prediction"] == "0" else "Real",
-                "confidence": spred["confidence"]
-            })
+    response = {
+        "username": username or "Guest",
+        "headline": headline,
+        "url": url,
+        "prediction": "Fake" if ml_result["prediction"] == "0" else "Real",
+        "confidence": ml_result["confidence"],
+        "class_probs": ml_result["class_probs"],
+        "heuristics": heuristics,
+        "trustability": trust
+    }
 
-        result = {
-            "username": username or "guest",
-            "headline": headline,
-            "url": url,
-            "prediction": "Fake" if ml_result["prediction"] == "0" else "Real",
-            "confidence": ml_result["confidence"],
-            "heuristics": heuristics,
-            "trustability": trustability,
-            "sentences": sentences,
-        }
-        return safe_json(result)
-    except Exception as e:
-        logging.exception("❌ Prediction error:")
-        return jsonify({"error": str(e)}), 500
+    return safe_json(response)
 
-# --- STATIC REPORT PAGE ---
+# ----- FULL REPORT -----
 @app.route("/full-report")
 def full_report():
-    return app.send_static_file("full-report.html")
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    username = verify_jwt(token)
 
-# --- ERRORS ---
-@app.errorhandler(404)
-def nf(e): return jsonify({"error": "Not found"}), 404
+    if not username:
+        # Not logged in — show friendly message
+        html = """
+        <html><head><title>Login Required</title></head>
+        <body style='font-family:Arial;background:#f5f8ff;text-align:center;margin-top:100px;'>
+          <div style='background:white;padding:40px;max-width:400px;margin:auto;border-radius:10px;box-shadow:0 4px 10px rgba(0,0,0,0.1);'>
+            <h2 style='color:#1565c0;'>🔒 Login Required</h2>
+            <p>You must be logged in to view your full report.</p>
+            <a href="#" onclick="window.close()" style='background:#1976d2;color:white;padding:8px 12px;border-radius:8px;text-decoration:none;'>Close</a>
+          </div>
+        </body></html>
+        """
+        return html, 401
 
-@app.errorhandler(500)
-def ie(e):
-    logging.exception("Internal error")
-    return jsonify({"error": "Internal server error"}), 500
+    return send_from_directory(os.path.join(os.path.dirname(__file__), "templates"), "full-report.html")
 
+# ============================================================== #
+# MAIN
+# ============================================================== #
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
-    logging.info(f"🚀 Server on http://0.0.0.0:{port}")
+    logging.info(f"🚀 Server running on http://0.0.0.0:{port}")
     app.run(host="0.0.0.0", port=port, debug=False)
