@@ -6,3 +6,15 @@
  * Running on http://127.0.0.1:10000
  * Running on http://10.101.66.209:10000
 2025-10-31 20:04:11,926 INFO [33mPress CTRL+C to quit[0m
+2025-10-31 20:15:47,184 INFO Model and vectorizer loaded successfully.
+2025-10-31 20:15:47,191 INFO Database initialized.
+2025-10-31 20:15:47,191 INFO Starting FakeNewsDetector on port 10000
+2025-10-31 20:15:47,212 INFO [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:10000
+ * Running on http://10.101.66.209:10000
+2025-10-31 20:15:47,214 INFO [33mPress CTRL+C to quit[0m
+2025-10-31 20:16:06,619 INFO 127.0.0.1 - - [31/Oct/2025 20:16:06] "[33mGET / HTTP/1.1[0m" 404 -
+2025-10-31 20:16:06,696 INFO 127.0.0.1 - - [31/Oct/2025 20:16:06] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2025-10-31 20:16:08,338 INFO 10.101.66.209 - - [31/Oct/2025 20:16:08] "[33mGET / HTTP/1.1[0m" 404 -
+2025-10-31 20:16:08,422 INFO 10.101.66.209 - - [31/Oct/2025 20:16:08] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
