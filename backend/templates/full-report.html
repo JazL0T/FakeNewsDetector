@@ -4,47 +4,56 @@
   <meta charset="UTF-8" />
   <title>Fake News Detector - Full Report</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
     body {
-      font-family: "Segoe UI", Arial, sans-serif;
+      font-family: "Inter", system-ui, sans-serif;
       background-color: #f6f9ff;
-      color: #222;
+      color: #1a1a1a;
       margin: 0;
       padding: 0;
+      line-height: 1.6;
     }
 
     header {
-      background-color: #1565c0;
+      background: linear-gradient(90deg, #1565c0, #1976d2);
       color: white;
       padding: 16px 28px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
     }
 
     header h1 {
       font-size: 20px;
       margin: 0;
+      font-weight: 700;
     }
 
     .username {
       font-weight: 600;
       font-size: 14px;
+      opacity: 0.9;
     }
 
     main {
       max-width: 900px;
-      margin: 28px auto;
+      margin: 32px auto;
       background: white;
-      border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-      padding: 28px;
+      border-radius: 14px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
+      padding: 32px;
+      animation: fadeIn 0.5s ease;
     }
 
     h2 {
       color: #1565c0;
+      font-size: 18px;
       border-bottom: 2px solid #1565c0;
       padding-bottom: 6px;
-      margin-top: 24px;
+      margin-top: 30px;
+      margin-bottom: 16px;
     }
 
     .section {
@@ -54,7 +63,7 @@
     .keyval {
       display: grid;
       grid-template-columns: 180px 1fr;
-      row-gap: 6px;
+      row-gap: 8px;
       font-size: 14px;
     }
 
@@ -65,30 +74,52 @@
 
     .prediction {
       font-size: 18px;
-      font-weight: bold;
-      padding: 10px;
+      font-weight: 700;
+      padding: 10px 16px;
       border-radius: 8px;
       display: inline-block;
       color: white;
       margin-bottom: 10px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
     }
 
-    .trusted {
-      background-color: #2e7d32;
+    .trusted { background-color: #2e7d32; }
+    .fake { background-color: #e53935; }
+    .uncertain { background-color: #f9a825; color: #222; }
+
+    .divider {
+      height: 1px;
+      background: #e0e0e0;
+      margin: 24px 0;
     }
 
-    .fake {
-      background-color: #e53935;
+    .article-box {
+      background: #f3f6fc;
+      border: 1px solid #cfd8dc;
+      border-radius: 10px;
+      padding: 14px;
+      max-height: 200px;
+      overflow-y: auto;
+      font-size: 13px;
+      line-height: 1.6;
+      color: #333;
+      white-space: pre-wrap;
     }
 
-    .uncertain {
-      background-color: #f9a825;
+    .toggle-btn {
+      color: #1565c0;
+      cursor: pointer;
+      font-size: 13px;
+      text-decoration: underline;
+      margin-top: 6px;
+      display: inline-block;
+      font-weight: 600;
     }
 
     footer {
       text-align: center;
-      margin-top: 20px;
-      color: #666;
+      margin-top: 40px;
+      color: #777;
       font-size: 13px;
       padding-bottom: 16px;
     }
@@ -96,7 +127,7 @@
     #login-required {
       display: none;
       text-align: center;
-      padding: 50px;
+      padding: 60px;
       color: #444;
     }
 
@@ -105,45 +136,41 @@
     }
 
     button {
-      background-color: #1565c0;
+      background-color: #1976d2;
       color: white;
       border: none;
-      border-radius: 6px;
-      padding: 8px 12px;
+      border-radius: 8px;
+      padding: 10px 16px;
       cursor: pointer;
       font-weight: 600;
+      font-size: 14px;
+      margin-top: 16px;
+      transition: all 0.2s ease;
     }
 
     button:hover {
       background-color: #0d47a1;
+      transform: translateY(-1px);
     }
 
-    .divider {
-      height: 1px;
-      background: #ddd;
-      margin: 18px 0;
+    .center-btn {
+      text-align: center;
+      margin-top: 24px;
     }
 
-    .article-box {
-      background: #f4f6fb;
-      border: 1px solid #d3d9f1;
-      border-radius: 10px;
-      padding: 16px;
-      max-height: 200px;
-      overflow-y: auto;
-      white-space: pre-wrap;
-      font-size: 13px;
-      line-height: 1.5;
-      color: #333;
+    #verdict {
+      font-size: 16px;
+      font-weight: 600;
+      color: #222;
+      background: #f4f7ff;
+      padding: 12px;
+      border-radius: 8px;
+      border-left: 4px solid #1565c0;
     }
 
-    .toggle-btn {
-      color: #1565c0;
-      cursor: pointer;
-      font-size: 13px;
-      text-decoration: underline;
-      margin-top: 8px;
-      display: inline-block;
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: none; }
     }
   </style>
 </head>
@@ -200,10 +227,10 @@
 
     <section class="section">
       <h2>Verdict</h2>
-      <p id="verdict" style="font-size:16px;font-weight:600;">—</p>
+      <p id="verdict">—</p>
     </section>
 
-    <div style="text-align:center;">
+    <div class="center-btn">
       <button id="back-btn">← Back to Extension</button>
     </div>
   </main>
@@ -253,7 +280,6 @@
 
       usernameDisplay.textContent = `👤 ${fnd_username}`;
 
-      // Get latest scan result
       const key = "fnd_history_" + fnd_username;
       const data = await chrome.storage.local.get([key]);
       const history = Array.isArray(data[key]) ? data[key] : [];
@@ -269,17 +295,14 @@
       scannedText.textContent = latest.text || "(No text captured)";
 
       toggleText.addEventListener("click", () => {
-        if (scannedText.style.display === "none") {
-          scannedText.style.display = "block";
-          toggleText.textContent = "Hide text";
-        } else {
-          scannedText.style.display = "none";
-          toggleText.textContent = "Show text";
-        }
+        const hidden = scannedText.style.display === "none";
+        scannedText.style.display = hidden ? "block" : "none";
+        toggleText.textContent = hidden ? "Hide text" : "Show text";
       });
 
       prediction.textContent = latest.prediction || "—";
-      prediction.className = "prediction " +
+      prediction.className =
+        "prediction " +
         (latest.prediction === "Fake" ? "fake" :
          latest.prediction === "Real" ? "trusted" : "uncertain");
 
