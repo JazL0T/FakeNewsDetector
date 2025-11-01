@@ -6,7 +6,7 @@
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='fakenewslogo.png') }}" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@600;700&display=swap" rel="stylesheet" />
 
-  <!-- jsPDF (for PDF export) -->
+  <!-- jsPDF + html2canvas -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
@@ -96,11 +96,6 @@
       gap: 8px;
     }
 
-    h2::before {
-      content: "📊";
-      font-size: 18px;
-    }
-
     .keyval {
       display: grid;
       grid-template-columns: 160px 1fr;
@@ -122,7 +117,6 @@
       margin-bottom: 25px;
       background: linear-gradient(135deg, #f5f9ff, #eef3fc);
       box-shadow: 0 3px 10px rgba(0,0,0,0.05);
-      transition: all 0.3s ease;
     }
 
     .verdict-text {
@@ -362,19 +356,51 @@
       }
     });
 
-    // Export to PDF
+    // ✅ Fixed Export to PDF (multi-page + clean)
     document.getElementById("export-pdf").addEventListener("click", async () => {
       const { jsPDF } = window.jspdf;
+      const button = document.getElementById("export-pdf");
       const element = document.getElementById("report-content");
 
-      const canvas = await html2canvas(element, { scale: 2 });
-      const imgData = canvas.toDataURL("image/png");
+      button.disabled = true;
+      button.textContent = "⏳ Generating PDF...";
 
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-      pdf.save("FakeNews_Report.pdf");
+      await new Promise(res => setTimeout(res, 250));
+
+      try {
+        const canvas = await html2canvas(element, { scale: 2, useCORS: true });
+        const imgData = canvas.toDataURL("image/png");
+        const pdf = new jsPDF("p", "mm", "a4");
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = pdf.internal.pageSize.getHeight();
+        const imgWidth = pdfWidth;
+        const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+        let heightLeft = imgHeight;
+        let position = 0;
+
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pdfHeight;
+
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+          heightLeft -= pdfHeight;
+        }
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+        pdf.save(`FakeNews_Report_${timestamp}.pdf`);
+
+        button.textContent = "✅ PDF Saved!";
+        setTimeout(() => (button.textContent = "📄 Export Report as PDF"), 2500);
+      } catch (err) {
+        console.error("PDF Export failed:", err);
+        alert("❌ PDF generation failed. Please try again.");
+        button.textContent = "📄 Export Report as PDF";
+      } finally {
+        button.disabled = false;
+      }
     });
   </script>
 </body>
