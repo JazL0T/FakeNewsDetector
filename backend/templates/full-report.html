@@ -6,10 +6,6 @@
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='fakenewslogo.png') }}" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@600;700&display=swap" rel="stylesheet" />
 
-  <!-- jsPDF + html2canvas -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-
   <style>
     :root {
       --blue: #1976d2;
@@ -96,6 +92,11 @@
       gap: 8px;
     }
 
+    h2::before {
+      content: "📊";
+      font-size: 18px;
+    }
+
     .keyval {
       display: grid;
       grid-template-columns: 160px 1fr;
@@ -117,6 +118,7 @@
       margin-bottom: 25px;
       background: linear-gradient(135deg, #f5f9ff, #eef3fc);
       box-shadow: 0 3px 10px rgba(0,0,0,0.05);
+      transition: all 0.3s ease;
     }
 
     .verdict-text {
@@ -198,31 +200,6 @@
       opacity: 0.8;
     }
 
-    /* ===== Buttons ===== */
-    .center {
-      text-align: center;
-      margin-top: 25px;
-    }
-
-    button {
-      background: var(--blue);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      padding: 12px 22px;
-      font-weight: 600;
-      font-family: "Poppins", sans-serif;
-      font-size: 14px;
-      transition: all 0.3s ease;
-      cursor: pointer;
-      box-shadow: 0 3px 8px rgba(21,101,192,0.25);
-    }
-
-    button:hover {
-      background: var(--blue-dark);
-      transform: translateY(-2px);
-    }
-
     /* ===== Footer ===== */
     footer {
       text-align: center;
@@ -251,7 +228,7 @@
     <div class="username">👤 {{ username }}</div>
   </header>
 
-  <main id="report-content">
+  <main>
     <!-- Verdict Card -->
     <div class="verdict-card">
       {% if row[4] == '0' %}
@@ -337,69 +314,17 @@
     </section>
   </main>
 
-  <div class="center">
-    <button id="export-pdf">📄 Export Report as PDF</button>
-  </div>
-
   <footer>
     Fake News Detector © 2025 — Powered by AI & Heuristic Analysis
   </footer>
 
   <script>
-    // Animate confidence bar
     document.addEventListener("DOMContentLoaded", () => {
       const bar = document.querySelector(".confidence-fill");
       if (bar) {
         const finalWidth = bar.style.width;
         bar.style.width = "0";
         setTimeout(() => { bar.style.width = finalWidth; }, 200);
-      }
-    });
-
-    // ✅ Fixed Export to PDF (multi-page + clean)
-    document.getElementById("export-pdf").addEventListener("click", async () => {
-      const { jsPDF } = window.jspdf;
-      const button = document.getElementById("export-pdf");
-      const element = document.getElementById("report-content");
-
-      button.disabled = true;
-      button.textContent = "⏳ Generating PDF...";
-
-      await new Promise(res => setTimeout(res, 250));
-
-      try {
-        const canvas = await html2canvas(element, { scale: 2, useCORS: true });
-        const imgData = canvas.toDataURL("image/png");
-        const pdf = new jsPDF("p", "mm", "a4");
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
-        const imgWidth = pdfWidth;
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-        let heightLeft = imgHeight;
-        let position = 0;
-
-        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-        heightLeft -= pdfHeight;
-
-        while (heightLeft > 0) {
-          position = heightLeft - imgHeight;
-          pdf.addPage();
-          pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
-          heightLeft -= pdfHeight;
-        }
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-        pdf.save(`FakeNews_Report_${timestamp}.pdf`);
-
-        button.textContent = "✅ PDF Saved!";
-        setTimeout(() => (button.textContent = "📄 Export Report as PDF"), 2500);
-      } catch (err) {
-        console.error("PDF Export failed:", err);
-        alert("❌ PDF generation failed. Please try again.");
-        button.textContent = "📄 Export Report as PDF";
-      } finally {
-        button.disabled = false;
       }
     });
   </script>
