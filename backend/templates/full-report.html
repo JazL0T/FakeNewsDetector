@@ -139,29 +139,31 @@
     }
 
     /* ===== Confidence ===== */
+    .confidence-value {
+      font-weight: 600;
+      color: var(--blue-dark);
+      font-size: 14px;
+      margin-top: 16px;
+      margin-bottom: 6px;
+    }
+
     .confidence-bar {
       height: 10px;
       background: #e0e0e0;
       border-radius: 6px;
       overflow: hidden;
-      margin: 8px 0;
+      margin-bottom: 10px;
     }
 
     .confidence-fill {
       height: 100%;
-      transition: width 1s ease-out;
       border-radius: 6px;
+      transition: width 1s ease-out;
     }
 
     .confidence-fill.real { background: var(--green); }
     .confidence-fill.fake { background: var(--red); }
     .confidence-fill.uncertain { background: var(--yellow); }
-
-    .confidence-value {
-      font-weight: 600;
-      color: var(--blue-dark);
-      font-size: 14px;
-    }
 
     /* ===== Evidence ===== */
     .evidence-box {
@@ -198,29 +200,7 @@
       opacity: 0.8;
     }
 
-    /* ===== Buttons & Footer ===== */
-    button {
-      background: var(--blue);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      padding: 12px 20px;
-      font-weight: 600;
-      font-family: "Poppins", sans-serif;
-      font-size: 14px;
-      margin-top: 20px;
-      transition: all 0.3s ease;
-      cursor: pointer;
-      box-shadow: 0 3px 8px rgba(21,101,192,0.25);
-    }
-
-    button:hover {
-      background: var(--blue-dark);
-      transform: translateY(-2px);
-    }
-
-    .center { text-align: center; }
-
+    /* ===== Footer ===== */
     footer {
       text-align: center;
       color: #777;
@@ -272,11 +252,15 @@
         <div>📅 Date:</div> <div>{{ row[8] }}</div>
       </div>
 
-      <div class="confidence-bar">
-        <div class="confidence-fill {% if row[4] == '0' %}fake{% elif trust.category == 'Uncertain' %}uncertain{% else %}real{% endif %}" style="width: {{ row[5] * 100 }}%;"></div>
-      </div>
       <div class="confidence-value">
         Confidence Level: <b>{{ "%.1f"|format(row[5] * 100) }}%</b>
+      </div>
+
+      <div class="confidence-bar">
+        <div class="confidence-fill 
+          {% if row[4] == '0' %}fake{% elif trust.category == 'Uncertain' %}uncertain{% else %}real{% endif %}"
+          style="width: {{ ((row[5] or 0) * 100) | string + '%' }};">
+        </div>
       </div>
     </section>
 
@@ -328,10 +312,6 @@
         </div>
       </div>
     </section>
-
-    <div class="center">
-      <button onclick="window.close()">← Back to Extension</button>
-    </div>
   </main>
 
   <footer>
@@ -339,7 +319,6 @@
   </footer>
 
   <script>
-    // Animate the confidence bar fill smoothly
     document.addEventListener("DOMContentLoaded", () => {
       const bar = document.querySelector(".confidence-fill");
       if (bar) {
