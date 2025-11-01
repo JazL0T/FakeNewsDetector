@@ -89,6 +89,7 @@
       margin: 20px 0;
     }
 
+    /* ===== Evidence Highlights ===== */
     .evidence-box {
       display: flex;
       flex-direction: column;
@@ -103,7 +104,9 @@
       padding: 10px;
       line-height: 1.5;
       font-size: 13px;
-      transition: background 0.2s ease;
+      transition: all 0.2s ease;
+      position: relative;
+      cursor: default;
     }
 
     .evidence-line.fake {
@@ -116,12 +119,38 @@
       border-left: 4px solid #2e7d32;
     }
 
+    .evidence-line:hover {
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      transform: translateY(-1px);
+    }
+
     .evidence-tags {
       font-size: 12px;
       color: #333;
       margin-top: 4px;
     }
 
+    /* Tooltip for explanation */
+    .tooltip {
+      display: none;
+      position: absolute;
+      left: 10px;
+      top: -30px;
+      background: rgba(0,0,0,0.8);
+      color: white;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 12px;
+      white-space: pre-line;
+      z-index: 100;
+      pointer-events: none;
+    }
+
+    .evidence-line:hover .tooltip {
+      display: block;
+    }
+
+    /* ===== Button ===== */
     button {
       background-color: #1565c0;
       color: white;
@@ -184,6 +213,7 @@
 
     <div class="divider"></div>
 
+    <!-- ===== WHY SECTION ===== -->
     <section>
       <h2>Why this result?</h2>
       {% if explain_reasons %}
@@ -199,12 +229,20 @@
 
     <div class="divider"></div>
 
+    <!-- ===== EVIDENCE SECTION ===== -->
     <section>
       <h2>Evidence from the Article</h2>
       {% if highlighted_lines %}
         <div class="evidence-box">
           {% for line in highlighted_lines[:25] %}
             <div class="evidence-line {% if line.weight > 0 %}real{% else %}fake{% endif %}">
+              <div class="tooltip">
+                {% if line.tags %}
+                  {{ line.tags | join("\n• ") }}
+                {% else %}
+                  No specific signals detected.
+                {% endif %}
+              </div>
               {{ line.text }}
               {% if line.tags %}
                 <div class="evidence-tags"><b>Signals:</b> {{ ', '.join(line.tags) }}</div>
@@ -219,6 +257,7 @@
 
     <div class="divider"></div>
 
+    <!-- ===== TRUSTABILITY ===== -->
     <section>
       <h2>Trustability</h2>
       <div class="keyval">
@@ -235,6 +274,7 @@
 
     <div class="divider"></div>
 
+    <!-- ===== HEURISTIC ANALYSIS ===== -->
     <section>
       <h2>Heuristic Analysis</h2>
       <div class="keyval">
@@ -247,6 +287,7 @@
 
     <div class="divider"></div>
 
+    <!-- ===== VERDICT ===== -->
     <section>
       <h2>Verdict</h2>
       {% if row[4] == '0' or trust.category == 'Suspicious' %}
