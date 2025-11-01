@@ -1,5 +1,5 @@
 # ==============================================================
-#  Fake News Detector API (Explainable) — Auth-Required Version
+#  Fake News Detector API (Explainable + Auth-Required Version)
 # ==============================================================
 
 import warnings
@@ -26,16 +26,10 @@ CORS(app, origins=["*"])
 
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "supersecretkey")
 app.config["JWT_SECRET"] = os.getenv("JWT_SECRET", "jwt_secret")
-app.config["DB_PATH"] = os.getenv(
-    "DB_PATH", os.path.join(os.path.dirname(__file__), "users.db")
-)
+app.config["DB_PATH"] = os.getenv("DB_PATH", os.path.join(os.path.dirname(__file__), "users.db"))
 
-MODEL_PATH = os.getenv(
-    "MODEL_PATH", os.path.join(os.path.dirname(__file__), "models", "model2.pkl")
-)
-VECTORIZER_PATH = os.getenv(
-    "VECTORIZER_PATH", os.path.join(os.path.dirname(__file__), "models", "vectorizer2.pkl")
-)
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "model2.pkl")
+VECTORIZER_PATH = os.path.join(os.path.dirname(__file__), "models", "vectorizer2.pkl")
 
 # ============================================================== #
 # LOGGING
@@ -49,21 +43,17 @@ logging.basicConfig(
 # ============================================================== #
 # LOAD MODEL
 # ============================================================== #
-model, vectorizer = None, None
-coef_vector = None
-vocab = None
+model, vectorizer, coef_vector, vocab = None, None, None, None
 try:
     model = joblib.load(MODEL_PATH)
     vectorizer = joblib.load(VECTORIZER_PATH)
     if hasattr(model, "coef_"):
-        coef_arr = getattr(model, "coef_", None)
-        if coef_arr is not None:
-            coef_vector = coef_arr[0]
-            if hasattr(vectorizer, "get_feature_names_out"):
-                vocab = vectorizer.get_feature_names_out()
-            elif hasattr(vectorizer, "vocabulary_"):
-                inv = {i: t for t, i in vectorizer.vocabulary_.items()}
-                vocab = [inv[i] for i in range(len(inv))]
+        coef_vector = model.coef_[0]
+        if hasattr(vectorizer, "get_feature_names_out"):
+            vocab = vectorizer.get_feature_names_out()
+        elif hasattr(vectorizer, "vocabulary_"):
+            inv = {i: t for t, i in vectorizer.vocabulary_.items()}
+            vocab = [inv[i] for i in range(len(inv))]
     logging.info("✅ Model and vectorizer loaded successfully.")
 except Exception as e:
     logging.error(f"❌ Failed to load model/vectorizer: {e}")
@@ -97,15 +87,13 @@ def init_db():
         """)
         conn.commit()
 
-
 def get_db_connection():
     return sqlite3.connect(app.config["DB_PATH"])
-
 
 init_db()
 
 # ============================================================== #
-# AUTH DECORATOR — require_login
+# AUTH DECORATOR
 # ============================================================== #
 def verify_jwt(token: str):
     try:
@@ -114,9 +102,7 @@ def verify_jwt(token: str):
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return None
 
-
 def require_login(f):
-    """Decorator: only allow if valid JWT present"""
     @wraps(f)
     def wrapper(*args, **kwargs):
         token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -126,23 +112,17 @@ def require_login(f):
         return f(username, *args, **kwargs)
     return wrapper
 
-
 # ============================================================== #
-# HELPER FUNCTIONS
+# HELPER + MODEL FUNCTIONS
 # ============================================================== #
 def tokenize_text(text: str) -> str:
     text = re.sub(r"http\S+|www\S+|https\S+", "", text)
     text = re.sub(r"[^a-zA-Z\s]", "", text)
     return text.lower().strip()
 
-
 def safe_json(data: dict):
     return jsonify(json.loads(json.dumps(data, default=str)))
 
-
-# ============================================================== #
-# MODEL & HEURISTICS
-# ============================================================== #
 def predict_fake_news(text: str) -> dict:
     if not model or not vectorizer:
         return {"error": "Model not loaded"}
@@ -156,7 +136,6 @@ def predict_fake_news(text: str) -> dict:
         conf = 0.5
         class_probs = {"0": 1 - conf, "1": conf}
     return {"prediction": str(pred), "confidence": conf, "class_probs": class_probs}
-
 
 def analyze_text_heuristics(text: str) -> dict:
     blob = TextBlob(text)
@@ -172,7 +151,6 @@ def analyze_text_heuristics(text: str) -> dict:
         "fake_score": fake_score,
     }
 
-
 def compute_trustability(url: str) -> dict:
     domain = tldextract.extract(url).registered_domain or "unknown"
     trusted_sources = ["bbc.com", "reuters.com", "apnews.com", "nytimes.com", "theguardian.com", "npr.org"]
@@ -186,29 +164,64 @@ def compute_trustability(url: str) -> dict:
         category = "Uncertain"
     return {"domain": domain, "trust_score": score, "category": category}
 
+# ============================================================== #
+# EXPLAINABILITY
+# ============================================================== #
+FAKE_KEYWORDS = {"shocking", "exclusive", "miracle", "hoax", "exposed", "coverup", "click here", "viral", "rumor"}
+REAL_KEYWORDS = {"official", "research", "confirmed", "report", "statement", "sources", "analysis", "data"}
+
+def keyword_hits(line: str):
+    l = line.lower()
+    f = [w for w in FAKE_KEYWORDS if w in l]
+    r = [w for w in REAL_KEYWORDS if w in l]
+    return f, r
+
+def explain_text(text: str, trust: dict, final_pred: str):
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    highlighted, reasons = [], []
+
+    if trust.get("category") == "Trusted":
+        reasons.append(f"Domain '{trust.get('domain')}' is a verified source.")
+    elif trust.get("category") == "Suspicious":
+        reasons.append(f"Domain '{trust.get('domain')}' is suspicious or clickbait-like.")
+    else:
+        reasons.append(f"Domain '{trust.get('domain')}' has uncertain credibility.")
+
+    for ln in lines:
+        f_hits, r_hits = keyword_hits(ln)
+        weight = 0
+        if f_hits: weight -= 0.3 * len(f_hits)
+        if r_hits: weight += 0.2 * len(r_hits)
+        highlighted.append({
+            "text": ln,
+            "weight": weight,
+            "tags": [*f_hits, *r_hits]
+        })
+
+    if final_pred == "Fake":
+        reasons.append("Detected emotionally charged or unreliable wording.")
+    elif final_pred == "Real":
+        reasons.append("Language aligns with factual reporting.")
+    else:
+        reasons.append("Mixed indicators found.")
+
+    return highlighted[:30], reasons
 
 # ============================================================== #
 # ROUTES
 # ============================================================== #
-
 @app.route("/")
 def home():
     return jsonify({"message": "✅ Fake News Detector API is running!"})
 
-
-# ---------- AUTH ----------
 @app.route("/register", methods=["POST"])
 def register():
     data = request.get_json() or {}
-    username = data.get("username", "").strip()
-    password = data.get("password", "").strip()
-
+    username, password = data.get("username", "").strip(), data.get("password", "").strip()
     if not username or not password:
         return jsonify({"error": "Missing username or password"}), 400
-
     if len(password) < 8:
         return jsonify({"error": "Password must be at least 8 characters long."}), 400
-
     hashed_pw = generate_password_hash(password)
     try:
         with get_db_connection() as conn:
@@ -218,57 +231,35 @@ def register():
     except sqlite3.IntegrityError:
         return jsonify({"error": "Username already exists."}), 400
 
-
 @app.route("/login", methods=["POST"])
 def login():
     data = request.get_json() or {}
-    username = data.get("username", "").strip()
-    password = data.get("password", "").strip()
-
-    if not username or not password:
-        return jsonify({"error": "Missing username or password"}), 400
-
+    username, password = data.get("username", "").strip(), data.get("password", "").strip()
     with get_db_connection() as conn:
         cur = conn.cursor()
         cur.execute("SELECT password FROM users WHERE username = ?", (username,))
         row = cur.fetchone()
-
     if not row or not check_password_hash(row[0], password):
         return jsonify({"error": "Invalid credentials"}), 401
-
     token = jwt.encode(
         {"username": username, "exp": datetime.utcnow() + timedelta(hours=3)},
-        app.config["JWT_SECRET"],
-        algorithm="HS256",
+        app.config["JWT_SECRET"], algorithm="HS256"
     )
     return jsonify({"token": token, "username": username})
 
-
-# ---------- PREDICT (Auth Required) ----------
 @app.route("/predict", methods=["POST"])
 @require_login
 def predict(username):
     data = request.get_json() or {}
-    text = data.get("text", "")
-    headline = data.get("headline", "")
-    url = data.get("url", "")
-    if not text:
-        return jsonify({"error": "Missing text"}), 400
-
+    text, headline, url = data.get("text", ""), data.get("headline", ""), data.get("url", "")
     ml = predict_fake_news(text)
-    if "error" in ml:
-        return jsonify({"error": ml["error"]}), 500
-
-    heur = analyze_text_heuristics(text)
-    trust = compute_trustability(url)
-
+    heur, trust = analyze_text_heuristics(text), compute_trustability(url)
     with get_db_connection() as conn:
         conn.execute("""
             INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (username, headline, url, text, ml["prediction"], ml["confidence"], json.dumps(heur), json.dumps(trust)))
         conn.commit()
-
     return safe_json({
         "username": username,
         "headline": headline,
@@ -279,8 +270,6 @@ def predict(username):
         "trustability": trust
     })
 
-
-# ---------- HISTORY (Auth Required) ----------
 @app.route("/get-history", methods=["GET"])
 @require_login
 def get_history(username):
@@ -291,71 +280,41 @@ def get_history(username):
             FROM scans WHERE username = ? ORDER BY timestamp DESC
         """, (username,))
         rows = cur.fetchall()
-
-    history = []
-    for r in rows:
-        history.append({
-            "id": r[0],
-            "headline": r[1],
-            "url": r[2],
-            "prediction": "Fake" if r[3] == "0" else "Real",
-            "confidence": r[4],
-            "heuristics": json.loads(r[5]),
-            "trustability": json.loads(r[6]),
-            "timestamp": r[7],
-        })
+    history = [{
+        "id": r[0], "headline": r[1], "url": r[2],
+        "prediction": "Fake" if r[3] == "0" else "Real",
+        "confidence": r[4],
+        "heuristics": json.loads(r[5]),
+        "trustability": json.loads(r[6]),
+        "timestamp": r[7],
+    } for r in rows]
     return jsonify({"history": history})
 
-
-# ---------- FULL REPORT ----------
 @app.route("/get-report/<int:scan_id>")
 def get_report(scan_id):
-    # ✅ Accept token from query param (preferred for Chrome extension)
     token = request.args.get("token") or request.headers.get("Authorization", "").replace("Bearer ", "")
-    
-    if not token:
-        return jsonify({"error": "Unauthorized. Missing token parameter."}), 401
-
     username = verify_jwt(token)
     if not username:
         return jsonify({"error": "Unauthorized. Please log in first."}), 401
-
-    # ✅ Fetch scan data owned by the logged-in user
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute(
-            """
+        cur.execute("""
             SELECT id, headline, url, text, prediction, confidence, heuristics, trustability, timestamp
             FROM scans WHERE id = ? AND username = ?
-            """,
-            (scan_id, username),
-        )
+        """, (scan_id, username))
         row = cur.fetchone()
-
     if not row:
         return jsonify({"error": "Report not found or not owned by this user."}), 404
-
-    # ✅ Load JSON columns
-    heur = json.loads(row[6]) if row[6] else {}
-    trust = json.loads(row[7]) if row[7] else {}
-
-    # ✅ Determine prediction label
+    heur, trust = json.loads(row[6]), json.loads(row[7])
     final_pred_label = "Fake" if row[4] == "0" else "Real"
-
-    # ✅ Generate explainability data
     highlighted_lines, reasons = explain_text(row[3] or "", trust, final_pred_label)
-
-    # ✅ Render the professional HTML report
     return render_template(
         "full-report.html",
-        row=row,
-        heur=heur,
-        trust=trust,
+        row=row, heur=heur, trust=trust,
         username=username,
         highlighted_lines=highlighted_lines,
-        explain_reasons=reasons,
+        explain_reasons=reasons
     )
-
 
 # ============================================================== #
 # MAIN
