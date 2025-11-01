@@ -71,18 +71,9 @@
       margin-bottom: 10px;
     }
 
-    .trusted {
-      background-color: #2e7d32;
-    }
-
-    .fake {
-      background-color: #e53935;
-    }
-
-    .uncertain {
-      background-color: #f9a825;
-      color: #222;
-    }
+    .trusted { background-color: #2e7d32; }
+    .fake { background-color: #e53935; }
+    .uncertain { background-color: #f9a825; color: #222; }
 
     footer {
       text-align: center;
@@ -111,6 +102,33 @@
       color: #333;
     }
 
+    /* Highlight styles for fake/real cues */
+    .line {
+      display: block;
+      padding: 3px 6px;
+      border-radius: 6px;
+      transition: background 0.2s ease;
+    }
+
+    .line:hover {
+      background: rgba(21, 101, 192, 0.08);
+    }
+
+    .fake-line {
+      background: rgba(229, 57, 53, 0.1);
+      border-left: 4px solid #e53935;
+    }
+
+    .real-line {
+      background: rgba(46, 125, 50, 0.1);
+      border-left: 4px solid #2e7d32;
+    }
+
+    .neutral-line {
+      background: rgba(255, 235, 59, 0.08);
+      border-left: 4px solid #fbc02d;
+    }
+
     .toggle-btn {
       color: #1565c0;
       cursor: pointer;
@@ -137,10 +155,7 @@
       background-color: #0d47a1;
     }
 
-    .center {
-      text-align: center;
-      margin-top: 20px;
-    }
+    .center { text-align: center; margin-top: 20px; }
 
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(8px); }
@@ -159,8 +174,7 @@
       <h2>Scan Summary</h2>
       <div class="keyval">
         <div>Headline:</div> <div>{{ row[1] or "—" }}</div>
-        <div>URL:</div>
-        <div><a href="{{ row[2] }}" target="_blank">{{ row[2] }}</a></div>
+        <div>URL:</div> <div><a href="{{ row[2] }}" target="_blank">{{ row[2] }}</a></div>
         <div>Date:</div> <div>{{ row[8] }}</div>
       </div>
 
@@ -231,6 +245,24 @@
   <script>
     const text = document.getElementById("scanned-text");
     const toggle = document.getElementById("toggle-text");
+
+    // Highlight lines that contribute to "Fake" or "Real" results
+    const raw = text.textContent.trim().split(/\n+/);
+    const analyzed = raw.map(line => {
+      const exclaims = (line.match(/!/g) || []).length;
+      const uppercaseRatio = (line.match(/[A-Z]{2,}/g) || []).length / Math.max(line.split(" ").length, 1);
+      const sentimentHint = line.match(/(fake|hoax|rumor|true|confirmed|report)/i);
+
+      // Basic heuristic: more exclamations or uppercase => "fake"; calm tone => "real"
+      if (exclaims > 1 || uppercaseRatio > 0.15) return { line, type: "fake" };
+      if (sentimentHint && sentimentHint[1].match(/true|confirmed/)) return { line, type: "real" };
+      return { line, type: "neutral" };
+    });
+
+    text.innerHTML = analyzed.map(l => 
+      `<span class="line ${l.type}-line">${l.line}</span>`
+    ).join("\\n");
+
     toggle.addEventListener("click", () => {
       if (text.style.display === "none") {
         text.style.display = "block";
