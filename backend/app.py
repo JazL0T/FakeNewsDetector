@@ -1,11 +1,11 @@
 # ==============================================================
-#  Fake News Detector API (FINAL - Full Report + Auth Fix)
+#  Fake News Detector API (FINAL — External Template + Auth Fix)
 # ==============================================================
 
 import warnings
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
 import joblib, re, os, sqlite3, logging, json
 from datetime import datetime, timedelta
@@ -20,7 +20,7 @@ import tldextract
 # ============================================================== #
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates")
 CORS(app, origins=["*"])
 
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "supersecretkey")
@@ -163,7 +163,6 @@ def register():
     if not username or not password:
         return jsonify({"error": "Missing username or password"}), 400
 
-    # 🔒 Enforce minimum password length (e.g., 8 characters)
     if len(password) < 8:
         return jsonify({"error": "Password must be at least 8 characters long."}), 400
 
@@ -175,7 +174,7 @@ def register():
         return jsonify({"message": "User registered successfully."})
     except sqlite3.IntegrityError:
         return jsonify({"error": "Username already exists."}), 400
-    
+
 @app.route("/login", methods=["POST"])
 def login():
     data = request.get_json() or {}
@@ -195,7 +194,7 @@ def login():
     }, app.config["JWT_SECRET"], algorithm="HS256")
     return jsonify({"token": token, "username": username})
 
-# ---------- PREDICTION ----------
+# ---------- PREDICT ----------
 @app.route("/predict", methods=["POST"])
 def predict():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -239,6 +238,7 @@ def get_history():
     username = verify_jwt(token)
     if not username:
         return jsonify({"error": "Unauthorized"}), 401
+
     with get_db_connection() as conn:
         cur = conn.cursor()
         cur.execute("""
@@ -246,6 +246,7 @@ def get_history():
             FROM scans WHERE username = ? ORDER BY timestamp DESC
         """, (username,))
         rows = cur.fetchall()
+
     history = []
     for r in rows:
         history.append({
@@ -263,7 +264,6 @@ def get_history():
 # ---------- FULL REPORT ----------
 @app.route("/get-report/<int:scan_id>")
 def get_report(scan_id):
-    # ✅ Chrome-safe: read token from ?token=
     token = request.args.get("token")
     if not token:
         token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -286,64 +286,13 @@ def get_report(scan_id):
     heur = json.loads(row[6])
     trust = json.loads(row[7])
 
-    return render_template_string("""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-      <meta charset="utf-8" />
-      <title>Full Report - Fake News Detector</title>
-      <style>
-        body { font-family: Arial; background:#f7f9fc; color:#333; padding:40px; }
-        .container { background:white; max-width:800px; margin:auto; padding:30px; border-radius:12px;
-                     box-shadow:0 4px 10px rgba(0,0,0,0.1); }
-        h1 { color:#1565c0; text-align:center; }
-        .fake { color:#e53935; font-weight:600; }
-        .real { color:#2e7d32; font-weight:600; }
-        hr { border: none; height: 1px; background:#ddd; margin:20px 0; }
-        .section { margin-bottom:20px; }
-        .data { background:#eef4ff; padding:12px; border-radius:8px; white-space:pre-wrap; }
-      </style>
-    </head>
-    <body>
-      <div class="container">
-        <h1>Fake News Detector - Full Report</h1>
-        <p><b>Headline:</b> {{ row[1] or "(No headline)" }}</p>
-        <p><b>URL:</b> <a href="{{ row[2] }}" target="_blank">{{ row[2] }}</a></p>
-        <p><b>Scanned by:</b> {{ username }}</p>
-        <p><b>Date:</b> {{ row[8] }}</p>
-        <p class="{{ 'fake' if row[4]=='0' else 'real' }}">
-          Prediction: {{ 'Fake' if row[4]=='0' else 'Real' }}
-          (Confidence: {{ '%.1f'|format(row[5]*100) }}%)
-        </p>
-        <hr>
-
-        <div class="section">
-          <h3>Heuristic Analysis</h3>
-          <ul>
-            <li>Sentiment: {{ heur.sentiment }}</li>
-            <li>Uppercase Ratio: {{ heur.uppercase_ratio }}</li>
-            <li>Exclamations: {{ heur.exclamations }}</li>
-            <li>Fake Score: {{ heur.fake_score }}</li>
-          </ul>
-        </div>
-
-        <div class="section">
-          <h3>Trustability</h3>
-          <ul>
-            <li>Domain: {{ trust.domain }}</li>
-            <li>Trust Score: {{ trust.trust_score }}</li>
-            <li>Category: {{ trust.category }}</li>
-          </ul>
-        </div>
-
-        <div class="section">
-          <h3>Scanned Text</h3>
-          <div class="data">{{ row[3] }}</div>
-        </div>
-      </div>
-    </body>
-    </html>
-    """, row=row, heur=heur, trust=trust, username=username)
+    return render_template(
+        "full-report.html",
+        row=row,
+        heur=heur,
+        trust=trust,
+        username=username
+    )
 
 # ============================================================== #
 # MAIN
