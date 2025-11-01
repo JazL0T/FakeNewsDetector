@@ -22,15 +22,8 @@
       box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     }
 
-    header h1 {
-      font-size: 20px;
-      margin: 0;
-    }
-
-    .username {
-      font-weight: 600;
-      font-size: 14px;
-    }
+    header h1 { font-size: 20px; margin: 0; }
+    .username { font-weight: 600; font-size: 14px; }
 
     main {
       max-width: 900px;
@@ -56,10 +49,7 @@
       font-size: 14px;
     }
 
-    .keyval div:first-child {
-      font-weight: 600;
-      color: #333;
-    }
+    .keyval div:first-child { font-weight: 600; color: #333; }
 
     .prediction {
       font-size: 18px;
@@ -83,12 +73,42 @@
       padding-bottom: 16px;
     }
 
-    .divider {
-      height: 1px;
-      background: #ddd;
-      margin: 20px 0;
+    .divider { height: 1px; background: #ddd; margin: 20px 0; }
+
+    /* === Heuristic Analysis Styles === */
+    .heuristics p {
+      background: #f4f7ff;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      border-left: 4px solid #1565c0;
     }
 
+    .heuristics small {
+      color: #444;
+      display: block;
+      margin-top: 6px;
+      font-size: 13px;
+    }
+
+    /* Gauge bar for Fake Score */
+    .gauge {
+      height: 10px;
+      width: 100%;
+      background: #e0e0e0;
+      border-radius: 6px;
+      margin-top: 6px;
+      overflow: hidden;
+    }
+
+    .gauge-bar {
+      height: 100%;
+      border-radius: 6px;
+      background: linear-gradient(90deg, #2e7d32, #f9a825, #e53935);
+      transition: width 0.6s ease;
+    }
+
+    /* Evidence Section */
     .evidence-box {
       display: flex;
       flex-direction: column;
@@ -106,15 +126,8 @@
       transition: background 0.2s ease;
     }
 
-    .evidence-line.fake {
-      background: #ffcdd2;
-      border-left: 4px solid #e53935;
-    }
-
-    .evidence-line.real {
-      background: #c8e6c9;
-      border-left: 4px solid #2e7d32;
-    }
+    .evidence-line.fake { background: #ffcdd2; border-left: 4px solid #e53935; }
+    .evidence-line.real { background: #c8e6c9; border-left: 4px solid #2e7d32; }
 
     .evidence-tags {
       font-size: 12px;
@@ -136,14 +149,8 @@
     }
 
     button:hover { background-color: #0d47a1; }
-
     .center { text-align: center; margin-top: 20px; }
-
-    ul.reasons {
-      padding-left: 18px;
-      line-height: 1.6;
-      color: #333;
-    }
+    ul.reasons { padding-left: 18px; line-height: 1.6; color: #333; }
 
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(8px); }
@@ -151,10 +158,7 @@
     }
 
     ::-webkit-scrollbar { width: 8px; }
-    ::-webkit-scrollbar-thumb {
-      background: #c5cae9;
-      border-radius: 6px;
-    }
+    ::-webkit-scrollbar-thumb { background: #c5cae9; border-radius: 6px; }
     ::-webkit-scrollbar-thumb:hover { background: #9fa8da; }
   </style>
 </head>
@@ -169,11 +173,9 @@
       <h2>Scan Summary</h2>
       <div class="keyval">
         <div>Headline:</div> <div>{{ row[1] or "—" }}</div>
-        <div>URL:</div>
-        <div><a href="{{ row[2] }}" target="_blank">{{ row[2] }}</a></div>
+        <div>URL:</div> <div><a href="{{ row[2] }}" target="_blank">{{ row[2] }}</a></div>
         <div>Date:</div> <div>{{ row[8] }}</div>
       </div>
-
       <div style="margin-top:20px;">
         <span class="prediction {% if row[4] == '0' %}fake{% else %}trusted{% endif %}">
           Prediction: {% if row[4] == '0' %}Fake{% else %}Real{% endif %}
@@ -235,13 +237,62 @@
 
     <div class="divider"></div>
 
+    <!-- 🧠 Improved Heuristic Analysis Section -->
     <section>
       <h2>Heuristic Analysis</h2>
-      <div class="keyval">
-        <div>Sentiment Polarity:</div> <div>{{ heur.sentiment }}</div>
-        <div>Uppercase Ratio:</div> <div>{{ heur.uppercase_ratio }}</div>
-        <div>Exclamations:</div> <div>{{ heur.exclamations }}</div>
-        <div>Fake Score:</div> <div>{{ heur.fake_score }}</div>
+      <div class="heuristics">
+        <p>
+          <b>🧭 Sentiment Polarity:</b> {{ "%.3f"|format(heur.sentiment) }}
+          <small>
+            {% if heur.sentiment > 0.3 %}
+              😊 Positive tone — may indicate reassuring or optimistic reporting.
+            {% elif heur.sentiment < -0.3 %}
+              😠 Negative tone — emotionally charged, possibly manipulative.
+            {% else %}
+              😐 Neutral tone — objective or balanced writing.
+            {% endif %}
+          </small>
+        </p>
+
+        <p>
+          <b>🔠 Uppercase Ratio:</b> {{ "%.3f"|format(heur.uppercase_ratio) }}
+          <small>
+            {% if heur.uppercase_ratio > 0.2 %}
+              ⚠️ Excessive uppercase — could be exaggeration or emphasis.
+            {% else %}
+              ✅ Normal capitalization — typical of professional journalism.
+            {% endif %}
+          </small>
+        </p>
+
+        <p>
+          <b>❗ Exclamations:</b> {{ heur.exclamations }}
+          <small>
+            {% if heur.exclamations > 3 %}
+              🚨 Multiple exclamation marks — emotional or attention-grabbing.
+            {% elif heur.exclamations > 0 %}
+              ⚠️ Some emotional tone detected.
+            {% else %}
+              📰 Calm, factual tone.
+            {% endif %}
+          </small>
+        </p>
+
+        <p>
+          <b>🤖 Fake Score:</b> {{ "%.3f"|format(heur.fake_score) }}
+          <div class="gauge">
+            <div class="gauge-bar" style="width: {{ heur.fake_score * 100 }}%;"></div>
+          </div>
+          <small>
+            {% if heur.fake_score > 0.7 %}
+              🔴 High fake-likelihood — tone and style resemble fake/sensational content.
+            {% elif heur.fake_score > 0.4 %}
+              🟠 Moderate fake indicators — some emotional or exaggerated cues detected.
+            {% else %}
+              🟢 Low fake-likelihood — calm, balanced writing style.
+            {% endif %}
+          </small>
+        </p>
       </div>
     </section>
 
