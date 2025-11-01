@@ -89,53 +89,37 @@
       margin: 20px 0;
     }
 
-    .article-box {
-      background: #f4f6fb;
-      border: 1px solid #d3d9f1;
-      border-radius: 10px;
-      padding: 16px;
-      max-height: 250px;
+    .evidence-box {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 400px;
       overflow-y: auto;
-      white-space: pre-wrap;
-      font-size: 13px;
-      line-height: 1.5;
-      color: #333;
+      padding-right: 4px;
     }
 
-    /* Highlight styles for fake/real cues */
-    .line {
-      display: block;
-      padding: 3px 6px;
-      border-radius: 6px;
+    .evidence-line {
+      border-radius: 8px;
+      padding: 10px;
+      line-height: 1.5;
+      font-size: 13px;
       transition: background 0.2s ease;
     }
 
-    .line:hover {
-      background: rgba(21, 101, 192, 0.08);
-    }
-
-    .fake-line {
-      background: rgba(229, 57, 53, 0.1);
+    .evidence-line.fake {
+      background: #ffcdd2;
       border-left: 4px solid #e53935;
     }
 
-    .real-line {
-      background: rgba(46, 125, 50, 0.1);
+    .evidence-line.real {
+      background: #c8e6c9;
       border-left: 4px solid #2e7d32;
     }
 
-    .neutral-line {
-      background: rgba(255, 235, 59, 0.08);
-      border-left: 4px solid #fbc02d;
-    }
-
-    .toggle-btn {
-      color: #1565c0;
-      cursor: pointer;
-      font-size: 13px;
-      text-decoration: underline;
-      margin-top: 8px;
-      display: inline-block;
+    .evidence-tags {
+      font-size: 12px;
+      color: #333;
+      margin-top: 4px;
     }
 
     button {
@@ -151,16 +135,27 @@
       transition: background 0.25s ease;
     }
 
-    button:hover {
-      background-color: #0d47a1;
-    }
+    button:hover { background-color: #0d47a1; }
 
     .center { text-align: center; margin-top: 20px; }
+
+    ul.reasons {
+      padding-left: 18px;
+      line-height: 1.6;
+      color: #333;
+    }
 
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: none; }
     }
+
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-thumb {
+      background: #c5cae9;
+      border-radius: 6px;
+    }
+    ::-webkit-scrollbar-thumb:hover { background: #9fa8da; }
   </style>
 </head>
 <body>
@@ -174,14 +169,9 @@
       <h2>Scan Summary</h2>
       <div class="keyval">
         <div>Headline:</div> <div>{{ row[1] or "—" }}</div>
-        <div>URL:</div> <div><a href="{{ row[2] }}" target="_blank">{{ row[2] }}</a></div>
+        <div>URL:</div>
+        <div><a href="{{ row[2] }}" target="_blank">{{ row[2] }}</a></div>
         <div>Date:</div> <div>{{ row[8] }}</div>
-      </div>
-
-      <div style="margin-top:15px;">
-        <b>Scanned Text:</b>
-        <div class="article-box" id="scanned-text">{{ row[3] or "(No text captured)" }}</div>
-        <span id="toggle-text" class="toggle-btn">Hide text</span>
       </div>
 
       <div style="margin-top:20px;">
@@ -190,6 +180,41 @@
         </span>
         <div><b>Confidence:</b> {{ "%.1f"|format(row[5] * 100) }}%</div>
       </div>
+    </section>
+
+    <div class="divider"></div>
+
+    <section>
+      <h2>Why this result?</h2>
+      {% if explain_reasons %}
+        <ul class="reasons">
+          {% for reason in explain_reasons %}
+            <li>{{ reason }}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>No detailed explanation available.</p>
+      {% endif %}
+    </section>
+
+    <div class="divider"></div>
+
+    <section>
+      <h2>Evidence from the Article</h2>
+      {% if highlighted_lines %}
+        <div class="evidence-box">
+          {% for line in highlighted_lines[:25] %}
+            <div class="evidence-line {% if line.weight > 0 %}real{% else %}fake{% endif %}">
+              {{ line.text }}
+              {% if line.tags %}
+                <div class="evidence-tags"><b>Signals:</b> {{ ', '.join(line.tags) }}</div>
+              {% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p>No highlighted lines available for this article.</p>
+      {% endif %}
     </section>
 
     <div class="divider"></div>
@@ -241,37 +266,5 @@
   <footer>
     Fake News Detector © 2025 — Powered by AI & Heuristic Analysis
   </footer>
-
-  <script>
-    const text = document.getElementById("scanned-text");
-    const toggle = document.getElementById("toggle-text");
-
-    // Highlight lines that contribute to "Fake" or "Real" results
-    const raw = text.textContent.trim().split(/\n+/);
-    const analyzed = raw.map(line => {
-      const exclaims = (line.match(/!/g) || []).length;
-      const uppercaseRatio = (line.match(/[A-Z]{2,}/g) || []).length / Math.max(line.split(" ").length, 1);
-      const sentimentHint = line.match(/(fake|hoax|rumor|true|confirmed|report)/i);
-
-      // Basic heuristic: more exclamations or uppercase => "fake"; calm tone => "real"
-      if (exclaims > 1 || uppercaseRatio > 0.15) return { line, type: "fake" };
-      if (sentimentHint && sentimentHint[1].match(/true|confirmed/)) return { line, type: "real" };
-      return { line, type: "neutral" };
-    });
-
-    text.innerHTML = analyzed.map(l => 
-      `<span class="line ${l.type}-line">${l.line}</span>`
-    ).join("\\n");
-
-    toggle.addEventListener("click", () => {
-      if (text.style.display === "none") {
-        text.style.display = "block";
-        toggle.textContent = "Hide text";
-      } else {
-        text.style.display = "none";
-        toggle.textContent = "Show text";
-      }
-    });
-  </script>
 </body>
 </html>
