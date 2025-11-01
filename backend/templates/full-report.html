@@ -81,6 +81,7 @@
       color: white;
       margin-bottom: 10px;
       box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+      transition: all 0.3s ease;
     }
 
     .trusted { background-color: #2e7d32; }
@@ -161,11 +162,29 @@
     #verdict {
       font-size: 16px;
       font-weight: 600;
-      color: #222;
-      background: #f4f7ff;
       padding: 12px;
       border-radius: 8px;
       border-left: 4px solid #1565c0;
+      background: #f4f7ff;
+      transition: all 0.3s ease;
+    }
+
+    .verdict-trusted {
+      background: #e8f5e9;
+      border-left-color: #2e7d32;
+      color: #1b5e20;
+    }
+
+    .verdict-fake {
+      background: #ffebee;
+      border-left-color: #e53935;
+      color: #b71c1c;
+    }
+
+    .verdict-uncertain {
+      background: #fffde7;
+      border-left-color: #f9a825;
+      color: #f57f17;
     }
 
     @keyframes fadeIn {
@@ -300,6 +319,7 @@
         toggleText.textContent = hidden ? "Hide text" : "Show text";
       });
 
+      // Dynamic prediction badge
       prediction.textContent = latest.prediction || "—";
       prediction.className =
         "prediction " +
@@ -319,12 +339,16 @@
       exclamations.textContent = heur.exclamations ?? "—";
       fakeScore.textContent = heur.fake_score?.toFixed(3) ?? "—";
 
+      // Dynamic verdict box colors
       if (latest.prediction === "Fake" || trust.category === "Suspicious") {
         verdict.textContent = "🔴 This article seems suspicious or fake. Verify using trusted sources.";
+        verdict.className = "verdict-fake";
       } else if (trust.category === "Uncertain") {
         verdict.textContent = "🟡 The article’s reliability is uncertain — cross-check the information.";
+        verdict.className = "verdict-uncertain";
       } else {
         verdict.textContent = "🟢 This article appears real and trustworthy.";
+        verdict.className = "verdict-trusted";
       }
 
       backBtn.addEventListener("click", () => window.close());
