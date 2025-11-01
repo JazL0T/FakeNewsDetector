@@ -159,8 +159,14 @@ def register():
     data = request.get_json() or {}
     username = data.get("username", "").strip()
     password = data.get("password", "").strip()
+
     if not username or not password:
         return jsonify({"error": "Missing username or password"}), 400
+
+    # 🔒 Enforce minimum password length (e.g., 8 characters)
+    if len(password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters long."}), 400
+
     hashed_pw = generate_password_hash(password)
     try:
         with get_db_connection() as conn:
@@ -169,7 +175,7 @@ def register():
         return jsonify({"message": "User registered successfully."})
     except sqlite3.IntegrityError:
         return jsonify({"error": "Username already exists."}), 400
-
+    
 @app.route("/login", methods=["POST"])
 def login():
     data = request.get_json() or {}
