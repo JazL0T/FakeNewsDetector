@@ -307,28 +307,45 @@ def get_history(username):
     return jsonify({"history": history})
 
 
-# ---------- FULL REPORT (Auth Required) ----------
+# ---------- FULL REPORT ----------
 @app.route("/get-report/<int:scan_id>")
-@require_login
-def get_report(username, scan_id):
+def get_report(scan_id):
+    # ✅ Accept token from query param (preferred for Chrome extension)
+    token = request.args.get("token") or request.headers.get("Authorization", "").replace("Bearer ", "")
+    
+    if not token:
+        return jsonify({"error": "Unauthorized. Missing token parameter."}), 401
+
+    username = verify_jwt(token)
+    if not username:
+        return jsonify({"error": "Unauthorized. Please log in first."}), 401
+
+    # ✅ Fetch scan data owned by the logged-in user
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(
+            """
             SELECT id, headline, url, text, prediction, confidence, heuristics, trustability, timestamp
             FROM scans WHERE id = ? AND username = ?
-        """, (scan_id, username))
+            """,
+            (scan_id, username),
+        )
         row = cur.fetchone()
 
     if not row:
-        return "<h3>Report not found or not owned by you.</h3>", 404
+        return jsonify({"error": "Report not found or not owned by this user."}), 404
 
-    heur = json.loads(row[6])
-    trust = json.loads(row[7])
+    # ✅ Load JSON columns
+    heur = json.loads(row[6]) if row[6] else {}
+    trust = json.loads(row[7]) if row[7] else {}
+
+    # ✅ Determine prediction label
     final_pred_label = "Fake" if row[4] == "0" else "Real"
 
-    from app import explain_text  # optional if not already in scope
+    # ✅ Generate explainability data
     highlighted_lines, reasons = explain_text(row[3] or "", trust, final_pred_label)
 
+    # ✅ Render the professional HTML report
     return render_template(
         "full-report.html",
         row=row,
