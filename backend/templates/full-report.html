@@ -4,16 +4,25 @@
   <meta charset="UTF-8" />
   <title>Fake News Detector - Full Report</title>
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='fakenewslogo.png') }}" />
-
-  <!-- Professional fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@600;700&display=swap" rel="stylesheet" />
 
   <style>
-    /* ====== Base Styles ====== */
+    :root {
+      --blue: #1976d2;
+      --blue-dark: #0d47a1;
+      --green: #2e7d32;
+      --red: #e53935;
+      --yellow: #f9a825;
+      --bg: #f7faff;
+      --text: #1c2430;
+      --muted: #6b7686;
+      --radius: 12px;
+    }
+
     body {
-      font-family: "Inter", "Segoe UI", sans-serif;
+      font-family: "Inter", sans-serif;
       background: linear-gradient(135deg, #e9f2ff, #ffffff);
-      color: #1c2430;
+      color: var(--text);
       margin: 0;
       padding: 0;
       letter-spacing: 0.2px;
@@ -21,7 +30,7 @@
     }
 
     header {
-      background: linear-gradient(90deg, #1565c0, #1e88e5);
+      background: linear-gradient(90deg, var(--blue-dark), var(--blue));
       color: white;
       padding: 18px 32px;
       display: flex;
@@ -37,12 +46,12 @@
     }
 
     .logo {
-      width: 44px;
-      height: 44px;
-      border-radius: 10px;
-      object-fit: cover;
+      width: 42px;
+      height: 42px;
+      border-radius: 8px;
       background: white;
-      padding: 4px;
+      object-fit: cover;
+      padding: 3px;
       box-shadow: 0 2px 5px rgba(0,0,0,0.2);
     }
 
@@ -51,56 +60,48 @@
       font-size: 22px;
       font-weight: 700;
       margin: 0;
-      letter-spacing: 0.4px;
     }
 
     .username {
-      font-weight: 500;
       font-size: 14px;
       opacity: 0.9;
-      font-family: "Inter", sans-serif;
+      font-weight: 500;
     }
 
     main {
-      max-width: 920px;
+      max-width: 900px;
       margin: 40px auto;
-      background: #ffffff;
-      border-radius: 16px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-      padding: 36px;
+      background: #fff;
+      border-radius: var(--radius);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+      padding: 32px;
       animation: fadeIn 0.5s ease;
-      transition: all 0.3s ease;
     }
 
+    /* ===== Headings ===== */
     h2 {
       font-family: "Poppins", sans-serif;
       font-weight: 600;
-      color: #0d47a1;
+      color: var(--blue-dark);
       font-size: 18px;
-      border-bottom: 3px solid #1976d2;
+      border-bottom: 3px solid var(--blue);
       padding-bottom: 6px;
       margin-top: 28px;
       display: flex;
       align-items: center;
       gap: 8px;
-      letter-spacing: 0.3px;
     }
 
     h2::before {
-      content: "📘";
+      content: "📊";
       font-size: 18px;
-    }
-
-    .divider {
-      height: 1px;
-      background: #e0e0e0;
-      margin: 28px 0;
     }
 
     .keyval {
       display: grid;
-      grid-template-columns: 180px 1fr;
+      grid-template-columns: 160px 1fr;
       row-gap: 8px;
+      margin-top: 10px;
       font-size: 15px;
     }
 
@@ -109,140 +110,123 @@
       color: #333;
     }
 
-    /* ====== Badges & Cards ====== */
-    .prediction {
-      font-family: "Poppins", sans-serif;
-      font-size: 16px;
-      font-weight: 600;
-      padding: 8px 14px;
-      border-radius: 10px;
-      display: inline-block;
-      color: white;
-      box-shadow: 0 3px 6px rgba(0,0,0,0.15);
-      margin-top: 10px;
+    /* ===== Verdict Card ===== */
+    .verdict-card {
+      text-align: center;
+      padding: 20px;
+      border-radius: 14px;
+      margin-bottom: 25px;
+      background: linear-gradient(135deg, #f5f9ff, #eef3fc);
+      box-shadow: 0 3px 10px rgba(0,0,0,0.05);
       transition: all 0.3s ease;
     }
 
-    .trusted { background-color: #2e7d32; }
-    .fake { background-color: #e53935; }
-    .uncertain { background-color: #f9a825; color: #222; }
-
-    section {
-      background: #f9fbff;
-      border-radius: 12px;
-      padding: 18px 22px;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.05);
-      margin-bottom: 20px;
+    .verdict-text {
+      font-family: "Poppins", sans-serif;
+      font-size: 20px;
+      font-weight: 700;
+      margin: 10px 0 6px;
+      text-transform: uppercase;
     }
 
-    /* ====== Heuristic Section ====== */
-    .heuristics p {
-      background: #f4f7ff;
-      padding: 14px;
-      border-radius: 10px;
-      margin-bottom: 14px;
-      border-left: 5px solid #1565c0;
+    .verdict-text.real { color: var(--green); }
+    .verdict-text.fake { color: var(--red); }
+    .verdict-text.uncertain { color: var(--yellow); }
+
+    .verdict-sub {
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    /* ===== Confidence ===== */
+    .confidence-bar {
+      height: 10px;
+      background: #e0e0e0;
+      border-radius: 6px;
+      overflow: hidden;
+      margin: 8px 0;
+    }
+
+    .confidence-fill {
+      height: 100%;
+      transition: width 1s ease-out;
+      border-radius: 6px;
+    }
+
+    .confidence-fill.real { background: var(--green); }
+    .confidence-fill.fake { background: var(--red); }
+    .confidence-fill.uncertain { background: var(--yellow); }
+
+    .confidence-value {
+      font-weight: 600;
+      color: var(--blue-dark);
       font-size: 14px;
     }
 
-    .heuristics small {
-      color: #555;
-      display: block;
-      margin-top: 6px;
-      font-size: 13px;
-      line-height: 1.4;
-    }
-
-    .gauge {
-      height: 12px;
-      width: 100%;
-      background: #e0e0e0;
-      border-radius: 6px;
-      margin-top: 8px;
-      overflow: hidden;
-    }
-
-    .gauge-bar {
-      height: 100%;
-      border-radius: 6px;
-      background: linear-gradient(90deg, #2e7d32, #f9a825, #e53935);
-      transition: width 0.8s ease;
-    }
-
-    /* ====== Evidence Section ====== */
+    /* ===== Evidence ===== */
     .evidence-box {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      max-height: 400px;
+      background: #f9fbff;
+      padding: 12px 14px;
+      border-radius: 10px;
+      box-shadow: inset 0 0 6px rgba(0,0,0,0.05);
+      max-height: 300px;
       overflow-y: auto;
-      padding-right: 4px;
     }
 
     .evidence-line {
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 10px;
+      margin-bottom: 8px;
+      font-size: 14px;
       line-height: 1.5;
-      font-size: 13.5px;
-      transition: background 0.2s ease;
-      font-family: "Inter", sans-serif;
-    }
-
-    .evidence-line.fake {
-      background: #ffe3e3;
-      border-left: 5px solid #e53935;
     }
 
     .evidence-line.real {
-      background: #e6f5e6;
-      border-left: 5px solid #2e7d32;
+      background: #e6f7e6;
+      border-left: 5px solid var(--green);
+    }
+
+    .evidence-line.fake {
+      background: #ffe6e6;
+      border-left: 5px solid var(--red);
     }
 
     .evidence-tags {
       font-size: 12px;
-      color: #333;
+      color: #555;
       margin-top: 4px;
       opacity: 0.8;
     }
 
+    /* ===== Buttons & Footer ===== */
     button {
-      background-color: #1976d2;
+      background: var(--blue);
       color: white;
       border: none;
-      border-radius: 10px;
+      border-radius: 8px;
       padding: 12px 20px;
-      cursor: pointer;
       font-weight: 600;
       font-family: "Poppins", sans-serif;
       font-size: 14px;
-      margin-top: 16px;
+      margin-top: 20px;
       transition: all 0.3s ease;
+      cursor: pointer;
       box-shadow: 0 3px 8px rgba(21,101,192,0.25);
-      letter-spacing: 0.3px;
     }
 
     button:hover {
-      background-color: #0d47a1;
+      background: var(--blue-dark);
       transform: translateY(-2px);
-      box-shadow: 0 4px 10px rgba(13,71,161,0.3);
     }
 
-    .center { text-align: center; margin-top: 20px; }
-
-    ul.reasons {
-      padding-left: 18px;
-      line-height: 1.7;
-      color: #333;
-      font-size: 14px;
-    }
+    .center { text-align: center; }
 
     footer {
       text-align: center;
-      margin-top: 40px;
-      color: #666;
+      color: #777;
       font-size: 13px;
-      padding-bottom: 16px;
-      font-family: "Inter", sans-serif;
+      margin-top: 40px;
+      padding-bottom: 20px;
     }
 
     @keyframes fadeIn {
@@ -251,45 +235,56 @@
     }
 
     ::-webkit-scrollbar { width: 8px; }
-    ::-webkit-scrollbar-thumb {
-      background: #c5cae9;
-      border-radius: 6px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-      background: #90a4ae;
-    }
+    ::-webkit-scrollbar-thumb { background: #c5cae9; border-radius: 6px; }
   </style>
 </head>
 
 <body>
   <header>
     <div class="logo-title">
-      <img src="{{ url_for('static', filename='fakenewslogo.png') }}" alt="Fake News Detector Logo" class="logo" />
+      <img src="{{ url_for('static', filename='fakenewslogo.png') }}" alt="Logo" class="logo" />
       <h1>Fake News Detector</h1>
     </div>
     <div class="username">👤 {{ username }}</div>
   </header>
 
   <main>
+    <!-- Verdict Card -->
+    <div class="verdict-card">
+      {% if row[4] == '0' %}
+        <div class="verdict-text fake">🚨 Fake News Detected</div>
+        <div class="verdict-sub">This article contains indicators of misinformation or unreliable claims.</div>
+      {% elif trust.category == 'Uncertain' %}
+        <div class="verdict-text uncertain">⚠️ Uncertain Reliability</div>
+        <div class="verdict-sub">Mixed indicators found — verify further with trusted sources.</div>
+      {% else %}
+        <div class="verdict-text real">✅ Trusted Article</div>
+        <div class="verdict-sub">This article aligns with reliable patterns and credible sources.</div>
+      {% endif %}
+    </div>
+
+    <!-- Scan Summary -->
     <section>
-      <h2>Scan Summary</h2>
+      <h2>🧾 Scan Summary</h2>
       <div class="keyval">
-        <div>Headline:</div> <div>{{ row[1] or "—" }}</div>
-        <div>URL:</div> <div><a href="{{ row[2] }}" target="_blank">{{ row[2] }}</a></div>
-        <div>Date:</div> <div>{{ row[8] }}</div>
+        <div>📰 Headline:</div> <div><b>{{ row[1] or "—" }}</b></div>
+        <div>🔗 URL:</div> <div><a href="{{ row[2] }}" target="_blank">{{ row[2] }}</a></div>
+        <div>📅 Date:</div> <div>{{ row[8] }}</div>
       </div>
-      <div style="margin-top:20px;">
-        <span class="prediction {% if row[4] == '0' %}fake{% else %}trusted{% endif %}">
-          {% if row[4] == '0' %}🚨 Fake{% else %}✅ Real{% endif %}
-        </span>
-        <div><b>Confidence:</b> {{ "%.1f"|format(row[5] * 100) }}%</div>
+
+      <div class="confidence-bar">
+        <div class="confidence-fill {% if row[4] == '0' %}fake{% elif trust.category == 'Uncertain' %}uncertain{% else %}real{% endif %}" style="width: {{ row[5] * 100 }}%;"></div>
+      </div>
+      <div class="confidence-value">
+        Confidence Level: <b>{{ "%.1f"|format(row[5] * 100) }}%</b>
       </div>
     </section>
 
+    <!-- Why This Result -->
     <section>
-      <h2>Why This Result?</h2>
+      <h2>🔍 Why We Think So</h2>
       {% if explain_reasons %}
-        <ul class="reasons">
+        <ul>
           {% for reason in explain_reasons %}
             <li>{{ reason }}</li>
           {% endfor %}
@@ -299,11 +294,12 @@
       {% endif %}
     </section>
 
+    <!-- Evidence -->
     <section>
-      <h2>Evidence from the Article</h2>
+      <h2>📚 Evidence from the Article</h2>
       {% if highlighted_lines %}
         <div class="evidence-box">
-          {% for line in highlighted_lines[:25] %}
+          {% for line in highlighted_lines[:20] %}
             <div class="evidence-line {% if line.weight > 0 %}real{% else %}fake{% endif %}">
               {{ line.text }}
               {% if line.tags %}
@@ -312,92 +308,25 @@
             </div>
           {% endfor %}
         </div>
+        <p style="font-size:12.5px; color:#777;">🟢 Green = factual tone | 🔴 Red = potentially misleading text</p>
       {% else %}
-        <p>No highlighted lines available for this article.</p>
+        <p>No highlighted evidence found.</p>
       {% endif %}
     </section>
 
+    <!-- Trust -->
     <section>
-      <h2>Trustability</h2>
+      <h2>🌐 Trust Analysis</h2>
       <div class="keyval">
         <div>Domain:</div> <div>{{ trust.domain }}</div>
-        <div>Trust Score:</div> <div>{{ trust.trust_score }}</div>
+        <div>Trust Score:</div> <div><b>{{ trust.trust_score }}</b></div>
         <div>Category:</div>
         <div>
-          <span class="prediction {% if trust.category == 'Trusted' %}trusted{% elif trust.category == 'Suspicious' %}fake{% else %}uncertain{% endif %}">
+          <span class="verdict-text {% if trust.category == 'Trusted' %}real{% elif trust.category == 'Suspicious' %}fake{% else %}uncertain{% endif %}">
             {{ trust.category }}
           </span>
         </div>
       </div>
-    </section>
-
-    <section>
-      <h2>Heuristic Analysis</h2>
-      <div class="heuristics">
-        <p>
-          <b>🧭 Sentiment Polarity:</b> {{ "%.3f"|format(heur.sentiment) }}
-          <small>
-            {% if heur.sentiment > 0.3 %}
-              😊 Positive tone — reassuring or optimistic writing.
-            {% elif heur.sentiment < -0.3 %}
-              😠 Negative tone — emotionally charged or manipulative.
-            {% else %}
-              😐 Neutral tone — objective and balanced.
-            {% endif %}
-          </small>
-        </p>
-
-        <p>
-          <b>🔠 Uppercase Ratio:</b> {{ "%.3f"|format(heur.uppercase_ratio) }}
-          <small>
-            {% if heur.uppercase_ratio > 0.2 %}
-              ⚠️ Excessive uppercase — could indicate exaggeration.
-            {% else %}
-              ✅ Normal capitalization — typical of professional journalism.
-            {% endif %}
-          </small>
-        </p>
-
-        <p>
-          <b>❗ Exclamations:</b> {{ heur.exclamations }}
-          <small>
-            {% if heur.exclamations > 3 %}
-              🚨 Many exclamation marks — emotional, attention-grabbing tone.
-            {% elif heur.exclamations > 0 %}
-              ⚠️ Some emotional emphasis detected.
-            {% else %}
-              📰 Calm, factual tone.
-            {% endif %}
-          </small>
-        </p>
-
-        <p>
-          <b>🤖 Fake Score:</b> {{ "%.3f"|format(heur.fake_score) }}
-          <div class="gauge">
-            <div class="gauge-bar" style="width: {{ heur.fake_score * 100 }}%;"></div>
-          </div>
-          <small>
-            {% if heur.fake_score > 0.7 %}
-              🔴 High fake-likelihood — sensational writing style.
-            {% elif heur.fake_score > 0.4 %}
-              🟠 Moderate fake indicators — some exaggerated elements.
-            {% else %}
-              🟢 Low fake-likelihood — calm, neutral reporting.
-            {% endif %}
-          </small>
-        </p>
-      </div>
-    </section>
-
-    <section>
-      <h2>Final Verdict</h2>
-      {% if row[4] == '0' or trust.category == 'Suspicious' %}
-        <p style="color:#e53935;font-weight:600;">🔴 This article appears suspicious or fake. Verify with trusted sources.</p>
-      {% elif trust.category == 'Uncertain' %}
-        <p style="color:#f9a825;font-weight:600;">🟡 The reliability is uncertain — cross-check with other credible sources.</p>
-      {% else %}
-        <p style="color:#2e7d32;font-weight:600;">🟢 This article appears real and trustworthy.</p>
-      {% endif %}
     </section>
 
     <div class="center">
@@ -408,5 +337,17 @@
   <footer>
     Fake News Detector © 2025 — Powered by AI & Heuristic Analysis
   </footer>
+
+  <script>
+    // Animate the confidence bar fill smoothly
+    document.addEventListener("DOMContentLoaded", () => {
+      const bar = document.querySelector(".confidence-fill");
+      if (bar) {
+        const finalWidth = bar.style.width;
+        bar.style.width = "0";
+        setTimeout(() => { bar.style.width = finalWidth; }, 200);
+      }
+    });
+  </script>
 </body>
 </html>
