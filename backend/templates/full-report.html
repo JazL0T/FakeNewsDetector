@@ -6,6 +6,10 @@
   <link rel="icon" type="image/png" href="{{ url_for('static', filename='fakenewslogo.png') }}" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@600;700&display=swap" rel="stylesheet" />
 
+  <!-- jsPDF (for PDF export) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
   <style>
     :root {
       --blue: #1976d2;
@@ -200,6 +204,31 @@
       opacity: 0.8;
     }
 
+    /* ===== Buttons ===== */
+    .center {
+      text-align: center;
+      margin-top: 25px;
+    }
+
+    button {
+      background: var(--blue);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 22px;
+      font-weight: 600;
+      font-family: "Poppins", sans-serif;
+      font-size: 14px;
+      transition: all 0.3s ease;
+      cursor: pointer;
+      box-shadow: 0 3px 8px rgba(21,101,192,0.25);
+    }
+
+    button:hover {
+      background: var(--blue-dark);
+      transform: translateY(-2px);
+    }
+
     /* ===== Footer ===== */
     footer {
       text-align: center;
@@ -228,7 +257,7 @@
     <div class="username">👤 {{ username }}</div>
   </header>
 
-  <main>
+  <main id="report-content">
     <!-- Verdict Card -->
     <div class="verdict-card">
       {% if row[4] == '0' %}
@@ -314,11 +343,16 @@
     </section>
   </main>
 
+  <div class="center">
+    <button id="export-pdf">📄 Export Report as PDF</button>
+  </div>
+
   <footer>
     Fake News Detector © 2025 — Powered by AI & Heuristic Analysis
   </footer>
 
   <script>
+    // Animate confidence bar
     document.addEventListener("DOMContentLoaded", () => {
       const bar = document.querySelector(".confidence-fill");
       if (bar) {
@@ -326,6 +360,21 @@
         bar.style.width = "0";
         setTimeout(() => { bar.style.width = finalWidth; }, 200);
       }
+    });
+
+    // Export to PDF
+    document.getElementById("export-pdf").addEventListener("click", async () => {
+      const { jsPDF } = window.jspdf;
+      const element = document.getElementById("report-content");
+
+      const canvas = await html2canvas(element, { scale: 2 });
+      const imgData = canvas.toDataURL("image/png");
+
+      const pdf = new jsPDF("p", "mm", "a4");
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
+      pdf.save("FakeNews_Report.pdf");
     });
   </script>
 </body>
