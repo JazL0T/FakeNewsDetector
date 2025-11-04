@@ -252,17 +252,20 @@
         <div>📅 Date:</div> <div>{{ row[8] }}</div>
       </div>
 
-      <!-- 🧠 Prediction Added Here -->
-      <div class="prediction-display {% if row[4] == '0' %}fake{% elif trust.category == 'Uncertain' %}uncertain{% else %}real{% endif %}">
-        Prediction Result:
-        {% if row[4] == '0' %}
-          Fake
-        {% elif trust.category == 'Uncertain' %}
-          Uncertain
-        {% else %}
-          Real
-        {% endif %}
-      </div>
+      <!-- 🧠 Prediction Badge Style -->
+<div class="prediction-row">
+  <span class="prediction-label">Prediction:</span>
+  <span class="prediction-badge 
+    {% if row[4] == '0' %}fake{% elif trust.category == 'Uncertain' %}uncertain{% else %}real{% endif %}">
+    {% if row[4] == '0' %}
+      Fake
+    {% elif trust.category == 'Uncertain' %}
+      Uncertain
+    {% else %}
+      Real
+    {% endif %}
+  </span>
+</div>
 
       <div class="confidence-value">
         Confidence Level: <b>{{ "%.1f"|format(row[5] * 100) }}%</b>
