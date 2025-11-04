@@ -245,11 +245,11 @@
 
     <!-- Scan Summary -->
     <section>
-      <h2>🧾 Scan Summary</h2>
+      <h2>Scan Summary</h2>
       <div class="keyval">
-        <div>📰 Headline:</div> <div><b>{{ row[1] or "—" }}</b></div>
-        <div>🔗 URL:</div> <div><a href="{{ row[2] }}" target="_blank">{{ row[2] }}</a></div>
-        <div>📅 Date:</div> <div>{{ row[8] }}</div>
+        <div>Headline:</div> <div><b>{{ row[1] or "—" }}</b></div>
+        <div>URL:</div> <div><a href="{{ row[2] }}" target="_blank">{{ row[2] }}</a></div>
+        <div>Date:</div> <div>{{ row[8] }}</div>
       </div>
 
       <!-- 🧠 Prediction Added Here -->
@@ -278,7 +278,7 @@
 
     <!-- Why This Result -->
     <section>
-      <h2>🔍 Why We Think So</h2>
+      <h2>Why We Think So</h2>
       {% if explain_reasons %}
         <ul>
           {% for reason in explain_reasons %}
@@ -292,7 +292,7 @@
 
     <!-- Evidence -->
     <section>
-      <h2>📚 Evidence from the Article</h2>
+      <h2>Evidence from the Article</h2>
       {% if highlighted_lines %}
         <div class="evidence-box">
           {% for line in highlighted_lines[:20] %}
@@ -312,7 +312,7 @@
 
     <!-- Trust -->
     <section>
-      <h2>🌐 Trust Analysis</h2>
+      <h2>Trust Analysis</h2>
       <div class="keyval">
         <div>Domain:</div> <div>{{ trust.domain }}</div>
         <div>Trust Score:</div> <div><b>{{ trust.trust_score }}</b></div>
