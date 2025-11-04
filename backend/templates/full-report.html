@@ -252,28 +252,34 @@
         <div>Date:</div> <div>{{ row[8] }}</div>
       </div>
 
-      <!-- 🧠 Prediction Added Here -->
-      <div class="prediction-display {% if row[4] == '0' %}fake{% elif trust.category == 'Uncertain' %}uncertain{% else %}real{% endif %}">
-        Prediction Result:
-        {% if row[4] == '0' %}
-          Fake
-        {% elif trust.category == 'Uncertain' %}
-          Uncertain
-        {% else %}
-          Real
-        {% endif %}
-      </div>
+      <!-- 🧠 Prediction with Tendency Display -->
+<div class="prediction-display {% if row[4] == '0' %}fake{% elif trust.category == 'Uncertain' %}uncertain{% else %}real{% endif %}">
+  {% if row[4] == '0' %}
+    🚨 Prediction Result: Fake
+  {% elif trust.category == 'Uncertain' %}
+    ⚠️ Prediction Result: Uncertain
+    <div class="tendency-text">
+      {% if row[5] >= 0.5 %}
+        (Higher tendency towards <span class="real-word">Real</span>)
+      {% else %}
+        (Higher tendency towards <span class="fake-word">Fake</span>)
+      {% endif %}
+    </div>
+  {% else %}
+    ✅ Prediction Result: Real
+  {% endif %}
+</div>
 
-      <div class="confidence-value">
-        Confidence Level: <b>{{ "%.1f"|format(row[5] * 100) }}%</b>
-      </div>
+<div class="confidence-value">
+  Confidence Level: <b>{{ "%.1f"|format(row[5] * 100) }}%</b>
+</div>
 
-      <div class="confidence-bar">
-        <div class="confidence-fill 
-          {% if row[4] == '0' %}fake{% elif trust.category == 'Uncertain' %}uncertain{% else %}real{% endif %}"
-          style="width: {{ ((row[5] or 0) * 100) | string + '%' }};">
-        </div>
-      </div>
+<div class="confidence-bar">
+  <div class="confidence-fill 
+    {% if row[4] == '0' %}fake{% elif trust.category == 'Uncertain' %}uncertain{% else %}real{% endif %}"
+    style="width: {{ ((row[5] or 0) * 100) | string + '%' }};">
+  </div>
+</div>
     </section>
 
     <!-- Why This Result -->
