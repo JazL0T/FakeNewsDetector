@@ -78,7 +78,6 @@
       animation: fadeIn 0.5s ease;
     }
 
-    /* ===== Headings ===== */
     h2 {
       font-family: "Poppins", sans-serif;
       font-weight: 600;
@@ -92,10 +91,7 @@
       gap: 8px;
     }
 
-    h2::before {
-      content: "📊";
-      font-size: 18px;
-    }
+    h2::before { content: "📊"; }
 
     .keyval {
       display: grid;
@@ -110,7 +106,6 @@
       color: #333;
     }
 
-    /* ===== Verdict Card ===== */
     .verdict-card {
       text-align: center;
       padding: 20px;
@@ -133,12 +128,21 @@
     .verdict-text.fake { color: var(--red); }
     .verdict-text.uncertain { color: var(--yellow); }
 
-    .verdict-sub {
-      font-size: 14px;
-      color: var(--muted);
-    }
+    .verdict-sub { font-size: 14px; color: var(--muted); }
 
-    /* ===== Confidence ===== */
+    .prediction-display {
+      font-size: 16px;
+      font-weight: 600;
+      margin-top: 10px;
+      background: #f8fbff;
+      padding: 10px 12px;
+      border-radius: 8px;
+      display: inline-block;
+    }
+    .prediction-display.real { color: var(--green); border-left: 5px solid var(--green); }
+    .prediction-display.fake { color: var(--red); border-left: 5px solid var(--red); }
+    .prediction-display.uncertain { color: var(--yellow); border-left: 5px solid var(--yellow); }
+
     .confidence-value {
       font-weight: 600;
       color: var(--blue-dark);
@@ -165,7 +169,6 @@
     .confidence-fill.fake { background: var(--red); }
     .confidence-fill.uncertain { background: var(--yellow); }
 
-    /* ===== Evidence ===== */
     .evidence-box {
       background: #f9fbff;
       padding: 12px 14px;
@@ -187,7 +190,6 @@
       background: #e6f7e6;
       border-left: 5px solid var(--green);
     }
-
     .evidence-line.fake {
       background: #ffe6e6;
       border-left: 5px solid var(--red);
@@ -200,7 +202,6 @@
       opacity: 0.8;
     }
 
-    /* ===== Footer ===== */
     footer {
       text-align: center;
       color: #777;
@@ -213,7 +214,6 @@
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: none; }
     }
-
     ::-webkit-scrollbar { width: 8px; }
     ::-webkit-scrollbar-thumb { background: #c5cae9; border-radius: 6px; }
   </style>
@@ -250,6 +250,18 @@
         <div>📰 Headline:</div> <div><b>{{ row[1] or "—" }}</b></div>
         <div>🔗 URL:</div> <div><a href="{{ row[2] }}" target="_blank">{{ row[2] }}</a></div>
         <div>📅 Date:</div> <div>{{ row[8] }}</div>
+      </div>
+
+      <!-- 🧠 Prediction Added Here -->
+      <div class="prediction-display {% if row[4] == '0' %}fake{% elif trust.category == 'Uncertain' %}uncertain{% else %}real{% endif %}">
+        Prediction Result:
+        {% if row[4] == '0' %}
+          Fake
+        {% elif trust.category == 'Uncertain' %}
+          Uncertain
+        {% else %}
+          Real
+        {% endif %}
       </div>
 
       <div class="confidence-value">
