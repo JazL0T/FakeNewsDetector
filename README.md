@@ -18,6 +18,7 @@
 **Official Website:** [https://www.fakenewsdetector101.com](https://www.fakenewsdetector101.com/)  
 **Privacy Policy:** [https://www.fakenewsdetector101.com/privacy.php](https://www.fakenewsdetector101.com/privacy.php)  
 **Terms of Service:** [https://www.fakenewsdetector101.com/terms.php](https://www.fakenewsdetector101.com/terms.php)
+
 **Contact:** [https://www.fakenewsdetector101.com/contact.php](https://www.fakenewsdetector101.com/contact.php)
 
 ---
