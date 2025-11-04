@@ -166,14 +166,13 @@ def analyze_text_heuristics(text: str) -> dict:
 def compute_trustability(url: str) -> dict:
     domain = tldextract.extract(url).registered_domain or "unknown"
     trusted_sources = [
-        "bbc.com",
-        "reuters.com",
-        "apnews.com",
-        "nytimes.com",
-        "theguardian.com",
-        "npr.org",
+        "bbc.com", "reuters.com", "apnews.com", "nytimes.com", "theguardian.com",
+        "npr.org", "cnn.com", "bbc.co.uk", "washingtonpost.com", "bloomberg.com",
+        "aljazeera.com", "forbes.com", "cnbc.com", "dw.com",
     ]
-    suspicious_markers = ["clickbait", "rumor", "gossip", "unknownblog", ".info", ".buzz", ".click"]
+    suspicious_markers = ["clickbait", "rumor", "gossip", "unknownblog", ".info", ".buzz", ".click",
+        "viralnews", "trendingnow", "fakeupdate", "getrich", "celebrityleak",
+        "politicalrumors", "blogspot", "wordpress"]
 
     score = 50
     if any(src in domain for src in trusted_sources):
