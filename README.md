@@ -1,65 +1,82 @@
-# Fake News Detector 101
+Fake News Detector 101 helps you instantly detect whether online news is fake, real, or uncertain — using advanced AI and linguistic analysis.
 
-**Fake News Detector 101** is a smart browser extension that uses AI and linguistic analysis to detect misleading or false news online — helping you verify information instantly.
+Powered by explainable AI, it scans any article you’re reading and highlights credibility indicators like tone, sentiment, and domain trust level. Whether you’re browsing news, blogs, or social posts, you’ll get real-time truth detection and confidence insights — all in one click.
 
----
+🔵 Key Features
 
-## Features
+✅ AI-Powered Detection — Analyze any article and instantly identify whether it’s Real, Fake, or Uncertain.
+✅ Instant Trust Score — Get a credibility rating based on domain reputation, sentiment, and tone balance.
+✅ Explainable Results — View the exact words, tone, and patterns that influenced the result.
+✅ Confidence Level Bar — Visual indicator showing how certain the model is about the classification.
+✅ 100% Privacy-First — No tracking, no ads, no personal data collection.
+✅ Secure HTTPS API — All scans are encrypted and processed through a secure backend hosted on Render Cloud.
 
-✅ **Scan any website** to detect fake or real news  
-✅ **Instant trust score** — based on tone, sentiment, and domain reputation  
-✅ **Explainable AI insights** — highlights key evidence in the article  
-✅ **100% privacy-first** — no tracking, no personal data collection  
+🔵 How It Works
 
----
+Install Fake News Detector 101 from the Chrome Web Store.
 
-## Website
+Visit any online article or news page.
 
-**Official Website:** [https://www.fakenewsdetector101.com](https://www.fakenewsdetector101.com/)  
-**Privacy Policy:** [https://www.fakenewsdetector101.com/privacy.php](https://www.fakenewsdetector101.com/privacy.php)  
-**Terms of Service:** [https://www.fakenewsdetector101.com/terms.php](https://www.fakenewsdetector101.com/terms.php) 
+Click the Fake News Detector 101 icon.
 
-**Contact:** [https://www.fakenewsdetector101.com/contact.php](https://www.fakenewsdetector101.com/contact.php)
+The AI will:
 
----
+Analyze the article’s text and headline.
 
-## How It Works
+Check the domain credibility.
 
-1. Install the **Fake News Detector 101** Chrome extension  
-2. Click the extension icon while reading an article  
-3. The AI scans the content and returns:
-   - 🟢 **Real** — reliable and factual  
-   - 🔴 **Fake** — misleading or suspicious  
-   - 🟡 **Uncertain** — mixed indicators; verify further  
-4. Get a **confidence score** and **trustability breakdown**
+Evaluate sentiment, tone, and keywords.
 
----
+Return a result with confidence and explanations.
 
-## Technical Overview
+You’ll see:
 
-- **Backend:** Flask (Python) + SQLite + TextBlob + Scikit-learn  
-- **Frontend:** Chrome Extension (Manifest V3, HTML, CSS, JS)  
-- **Deployment:** Render Cloud (Python backend API)  
-- **AI Model:** Logistic Regression + Heuristic Analysis (TF-IDF)
+🟢 Real — Reliable and factual
 
----
+🔴 Fake — Misleading or sensational
 
-## Security
+🟡 Uncertain — Mixed indicators; verify further
 
-- No user data is stored or tracked.  
-- JWT-based authentication is used for secure logins.  
-- Environment variables (`.env`) protect sensitive keys and API secrets.  
-- HTTPS enforced for API endpoints.
+🔵 Technology Stack
 
----
+Backend: Flask (Python) + SQLite + TextBlob + Scikit-learn
 
-## Developer Setup (Optional)
+Frontend: Chrome Extension (Manifest V3, HTML, CSS, JS)
 
-If you want to run your own version:
+Deployment: Render Cloud (API endpoint)
 
-```bash
-git clone https://github.com/JazL0T/FakeNewsDetector.git
-cd FakeNewsDetector/backend
-pip install -r requirements.txt
-python app.py
+AI Model: Logistic Regression with TF-IDF and heuristic tone analysis
 
+🔵 Privacy & Security
+
+1. Fake News Detector 101 was built with privacy in mind:
+
+2. We never collect or sell personal data.
+
+3. We only analyze text from pages you manually scan.
+
+4. All requests use secure HTTPS encryption.
+
+5. Authentication uses JWT tokens for safe logins.
+
+6. Sensitive backend keys are stored in .env for protection.
+
+7. You are always in control — scans only occur when you click “Scan”.
+
+🔵 Official Links
+
+Website: https://www.fakenewsdetector101.com
+
+Privacy Policy: https://www.fakenewsdetector101.com/privacy.php
+
+Terms of Service: https://www.fakenewsdetector101.com/terms.php
+
+Contact: https://www.fakenewsdetector101.com/contact.php
+
+🔵 About
+
+Developed by JazL0T — Diploma in Network Security (GMI).
+Made with ❤️ using Python, Flask, and AI to promote digital truth and information safety.
+
+✅ Keywords (optional):
+fake news detector, ai news checker, credibility checker, news verification, misinformation, fact checker, truth detector, chrome extension
