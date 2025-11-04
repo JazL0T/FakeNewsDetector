@@ -61,7 +61,3 @@ cd FakeNewsDetector/backend
 pip install -r requirements.txt
 python app.py
 
-License
-© 2025 Fake News Detector 101 — All Rights Reserved.
-Developed by JazL0T
-.
