@@ -454,40 +454,44 @@ def get_history():
     username = verify_jwt(token)
     if not username:
         return jsonify({"error": "Unauthorized"}), 401
+
     with get_db_connection() as conn:
         cur = conn.cursor()
         cur.execute(
             """
             SELECT id, headline, url, prediction, confidence, heuristics, trustability, timestamp
             FROM scans WHERE username = ? ORDER BY timestamp DESC
-        """,
+            """,
             (username,),
         )
         rows = cur.fetchall()
+
     history = []
     for r in rows:
-    ts = r[7]
-    try:
-        # Convert legacy timestamp format to ISO UTC if needed
-        parsed = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
-        ts = parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
-    except Exception:
-        pass  # already in correct format
+        # ✅ Proper indentation starts here
+        ts = r[7]
+        try:
+            # Convert to ISO UTC format if not already
+            parsed = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+            ts = parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
+        except Exception:
+            pass  # already formatted or null
 
-    history.append(
-        {
-            "id": r[0],
-            "headline": r[1],
-            "url": r[2],
-            "prediction": "Fake" if r[3] == "0" else "Real",
-            "confidence": r[4],
-            "heuristics": json.loads(r[5]),
-            "trustability": json.loads(r[6]),
-            "timestamp": ts,
-        }
-    )
+        history.append(
+            {
+                "id": r[0],
+                "headline": r[1],
+                "url": r[2],
+                "prediction": "Fake" if r[3] == "0" else "Real",
+                "confidence": r[4],
+                "heuristics": json.loads(r[5]),
+                "trustability": json.loads(r[6]),
+                "timestamp": ts,  # always ISO UTC
+            }
+        )
 
     return jsonify({"history": history})
+
 
 
 # ---------- FULL REPORT ----------
