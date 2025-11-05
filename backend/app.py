@@ -404,24 +404,27 @@ def predict():
     highlighted_lines, reasons = explain_text(text, trust, final_pred_label)
 
     if username:
-        with get_db_connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-                (
-                    username,
-                    headline,
-                    url,
-                    text,
-                    ml["prediction"],
-                    ml["confidence"],
-                    json.dumps(heur),
-                    json.dumps(trust),
-                ),
-            )
-            conn.commit()
+    utc_now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")  # ISO UTC format
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+            (
+                username,
+                headline,
+                url,
+                text,
+                ml["prediction"],
+                ml["confidence"],
+                json.dumps(heur),
+                json.dumps(trust),
+                utc_now,
+            ),
+        )
+        conn.commit()
+
 
     # Keep original fields for popup compatibility; add extra "explain" fields
     return safe_json(
