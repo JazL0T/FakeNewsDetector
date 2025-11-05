@@ -186,6 +186,62 @@ def verify_jwt(token: str):
 def safe_json(data: dict):
     return jsonify(json.loads(json.dumps(data, default=str)))
 
+def explain_text(text: str, trust: dict, final_pred: str):
+    """
+    Produce:
+      - highlighted_lines: list of dicts {text, weight, reason_tags}
+      - reasons: list[str]
+    """
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    highlighted = []
+    reasons = []
+
+    # domain reason
+    if trust.get("category") == "Trusted":
+        reasons.append(f"Domain '{trust.get('domain')}' is in trusted list.")
+    elif trust.get("category") == "Suspicious":
+        reasons.append(f"Domain '{trust.get('domain')}' has suspicious markers.")
+    else:
+        reasons.append(f"Domain '{trust.get('domain')}' has uncertain reliability.")
+
+    for ln in lines:
+        w_tfidf = tfidf_line_score(ln)
+        fp = line_heuristic_score(ln)
+        w_heur = (0.5 - fp)
+
+        f_hits, r_hits = keyword_hits(ln)
+        kw_signal = 0.0
+        if f_hits:
+            kw_signal -= 0.25 * len(f_hits)
+        if r_hits:
+            kw_signal += 0.15 * len(r_hits)
+
+        total = w_tfidf + w_heur + kw_signal
+        tags = []
+        if f_hits:
+            tags.append(f"Fake cues: {', '.join(f_hits)}")
+        if r_hits:
+            tags.append(f"Real cues: {', '.join(r_hits)}")
+        if abs(w_tfidf) > 0.2:
+            tags.append("Model-weighted terms influence")
+        if fp > 0.7:
+            tags.append("Sensational tone (caps/exclamations)")
+        elif fp < 0.3:
+            tags.append("Balanced tone")
+
+        highlighted.append({"text": ln, "weight": total, "tags": tags})
+
+    if final_pred == "Fake":
+        reasons.append("Model detected terms and tone consistent with fake/sensational content.")
+    elif final_pred == "Real":
+        reasons.append("Model detected balanced language consistent with real reporting.")
+    else:
+        reasons.append("Signals were mixed; result uncertain.")
+
+    highlighted_sorted = sorted(highlighted, key=lambda d: abs(d["weight"]), reverse=True)
+    return highlighted_sorted, reasons
+
+
 # ============================================================== #
 # ROUTES
 # ============================================================== #
