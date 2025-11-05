@@ -1,5 +1,5 @@
 # ==============================================================
-#  Fake News Detector API (Explainable) — External Template + Auth Fix (UTC Version)
+#  Fake News Detector API (Explainable) — External Template + Auth Fix
 # ==============================================================
 
 import warnings
@@ -54,13 +54,17 @@ vocab = None
 try:
     model = joblib.load(MODEL_PATH)
     vectorizer = joblib.load(VECTORIZER_PATH)
+    # Try to expose linear model weights if present (e.g., LogisticRegression / LinearSVC)
     if hasattr(model, "coef_"):
         coef_arr = getattr(model, "coef_", None)
         if coef_arr is not None:
+            # Binary classifier -> shape (1, n_features)
             coef_vector = coef_arr[0]
+            # get_feature_names_out is available in newer scikit versions
             if hasattr(vectorizer, "get_feature_names_out"):
                 vocab = vectorizer.get_feature_names_out()
             elif hasattr(vectorizer, "vocabulary_"):
+                # Fallback: build index->term mapping from vocabulary_
                 inv = {i: t for t, i in vectorizer.vocabulary_.items()}
                 vocab = [inv[i] for i in range(len(inv))]
     logging.info("✅ Model and vectorizer loaded successfully.")
@@ -73,14 +77,17 @@ except Exception as e:
 def init_db():
     with sqlite3.connect(app.config["DB_PATH"]) as conn:
         c = conn.cursor()
-        c.execute("""
+        c.execute(
+            """
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
                 password TEXT NOT NULL
             )
-        """)
-        c.execute("""
+        """
+        )
+        c.execute(
+            """
             CREATE TABLE IF NOT EXISTS scans (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT NOT NULL,
@@ -91,55 +98,53 @@ def init_db():
                 confidence REAL,
                 heuristics TEXT,
                 trustability TEXT,
-                timestamp TEXT DEFAULT CURRENT_TIMESTAMP
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
         conn.commit()
+
 
 def get_db_connection():
     return sqlite3.connect(app.config["DB_PATH"])
 
+
 init_db()
 
 # ============================================================== #
-# HELPERS
+# HELPER: Tokenization / Prediction / Heuristics
 # ============================================================== #
 def tokenize_text(text: str) -> str:
     text = re.sub(r"http\S+|www\S+|https\S+", "", text)
     text = re.sub(r"[^a-zA-Z\s]", "", text)
     return text.lower().strip()
 
-def now_utc_iso():
-    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-
-def to_iso_utc(ts):
-    if not ts:
-        return ts
-    try:
-        parsed = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
-        return parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
-    except Exception:
-        return ts
 
 def predict_fake_news(text: str) -> dict:
     if not model or not vectorizer:
         return {"error": "Model not loaded"}
     features = vectorizer.transform([tokenize_text(text)])
     pred = model.predict(features)[0]
-
+    # Try probabilities if available
     if hasattr(model, "predict_proba"):
         probs = model.predict_proba(features)[0]
         conf = float(max(probs))
         class_probs = {"0": float(probs[0]), "1": float(probs[1])}
     else:
+        # Probability not available — synthesize confidence from decision function if present
         if hasattr(model, "decision_function"):
             df = model.decision_function(features)
+            # squash with logistic for pseudo-confidence
             conf = float(1 / (1 + math.exp(-abs(df[0]))))
         else:
             conf = 0.5
         class_probs = {"0": 1 - conf, "1": conf}
+    return {
+        "prediction": str(pred),
+        "confidence": conf,
+        "class_probs": class_probs,
+    }
 
-    return {"prediction": str(pred), "confidence": conf, "class_probs": class_probs}
 
 def analyze_text_heuristics(text: str) -> dict:
     blob = TextBlob(text)
@@ -157,6 +162,7 @@ def analyze_text_heuristics(text: str) -> dict:
         "fake_score": fake_score,
     }
 
+
 def compute_trustability(url: str) -> dict:
     domain = tldextract.extract(url).registered_domain or "unknown"
     trusted_sources = [
@@ -164,8 +170,9 @@ def compute_trustability(url: str) -> dict:
         "npr.org", "cnn.com", "bbc.co.uk", "washingtonpost.com", "bloomberg.com",
         "aljazeera.com", "forbes.com", "cnbc.com", "dw.com",
     ]
-    suspicious_markers = ["clickbait", "rumor", "gossip", ".info", ".buzz", ".click",
-                          "viralnews", "wordpress", "blogspot"]
+    suspicious_markers = ["clickbait", "rumor", "gossip", "unknownblog", ".info", ".buzz", ".click",
+        "viralnews", "trendingnow", "fakeupdate", "getrich", "celebrityleak",
+        "politicalrumors", "blogspot", "wordpress"]
 
     score = 50
     if any(src in domain for src in trusted_sources):
@@ -176,6 +183,7 @@ def compute_trustability(url: str) -> dict:
         category = "Uncertain"
     return {"domain": domain, "trust_score": score, "category": category}
 
+
 def verify_jwt(token: str):
     try:
         decoded = jwt.decode(token, app.config["JWT_SECRET"], algorithms=["HS256"])
@@ -183,14 +191,81 @@ def verify_jwt(token: str):
     except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return None
 
+
 def safe_json(data: dict):
     return jsonify(json.loads(json.dumps(data, default=str)))
+
+
+# ============================================================== #
+# EXPLAINABILITY UTILITIES
+# ============================================================== #
+
+FAKE_KEYWORDS = {
+    "shocking", "exclusive", "miracle", "hoax", "exposed", "coverup", "you wont believe",
+    "click here", "secret", "viral", "fake", "rumor", "scam"
+}
+REAL_KEYWORDS = {
+    "official", "research", "confirmed", "report", "statement", "evidence", "investigation",
+    "sources", "analysis", "according", "data"
+}
+
+def keyword_hits(line: str):
+    l = line.lower()
+    f = [w for w in FAKE_KEYWORDS if w in l]
+    r = [w for w in REAL_KEYWORDS if w in l]
+    return f, r
+
+def tfidf_line_score(line: str):
+    """
+    Sum model weights for tokens in the line.
+    Positive -> pushes toward class '1' (we map to 'Real'),
+    Negative -> toward class '0' ('Fake').
+    Returns score (float). If no coef available, returns 0.
+    """
+    if coef_vector is None or vectorizer is None:
+        return 0.0
+    if hasattr(vectorizer, "build_analyzer"):
+        analyzer = vectorizer.build_analyzer()
+        tokens = analyzer(line)
+    else:
+        tokens = tokenize_text(line).split()
+    score = 0.0
+    if hasattr(vectorizer, "vocabulary_"):
+        vocab_map = vectorizer.vocabulary_
+        for t in tokens:
+            idx = vocab_map.get(t)
+            if idx is not None and idx < len(coef_vector):
+                score += float(coef_vector[idx])
+    else:
+        # no direct vocab map; best effort
+        if vocab is not None:
+            idx_map = {term: i for i, term in enumerate(vocab)}
+            for t in tokens:
+                i = idx_map.get(t)
+                if i is not None and i < len(coef_vector):
+                    score += float(coef_vector[i])
+    return score
+
+def line_heuristic_score(line: str):
+    # simple heuristic signals for the line itself
+    excls = line.count("!")
+    upper_ratio = 0.0
+    words = line.split()
+    if words:
+        upper_ratio = sum(1 for w in words if w.isupper()) / len(words)
+    s = TextBlob(line).sentiment.polarity
+    # Map to a rough “fake pressure” score ( >0 fake-ish, <0 real-ish )
+    fake_pressure = (0.5 * (1 - abs(s))) + (0.3 * upper_ratio) + (0.2 * min(excls / 3, 1))
+    return fake_pressure  # ~0..1
 
 def explain_text(text: str, trust: dict, final_pred: str):
     """
     Produce:
       - highlighted_lines: list of dicts {text, weight, reason_tags}
       - reasons: list[str]
+    Weight sign:
+       positive => more REAL (green)
+       negative => more FAKE (red)
     """
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     highlighted = []
@@ -204,19 +279,24 @@ def explain_text(text: str, trust: dict, final_pred: str):
     else:
         reasons.append(f"Domain '{trust.get('domain')}' has uncertain reliability.")
 
+    # per-line scores and tags
     for ln in lines:
+        # TF-IDF directional score (pos -> real, neg -> fake)
         w_tfidf = tfidf_line_score(ln)
+        # heuristic fake pressure (0..1), map to signed signal (fake-positive => negative weight)
         fp = line_heuristic_score(ln)
+        # 0.5 baseline; >0.5 -> fake-ish -> negative, <0.5 -> real-ish -> positive
         w_heur = (0.5 - fp)
 
         f_hits, r_hits = keyword_hits(ln)
         kw_signal = 0.0
         if f_hits:
-            kw_signal -= 0.25 * len(f_hits)
+            kw_signal -= 0.25 * len(f_hits)  # fake-ish
         if r_hits:
-            kw_signal += 0.15 * len(r_hits)
+            kw_signal += 0.15 * len(r_hits)  # real-ish
 
         total = w_tfidf + w_heur + kw_signal
+
         tags = []
         if f_hits:
             tags.append(f"Fake cues: {', '.join(f_hits)}")
@@ -231,6 +311,8 @@ def explain_text(text: str, trust: dict, final_pred: str):
 
         highlighted.append({"text": ln, "weight": total, "tags": tags})
 
+    # global explanation bullets
+    # We only have document-level heuristics in /predict; for /get-report we’ll add reasons here
     if final_pred == "Fake":
         reasons.append("Model detected terms and tone consistent with fake/sensational content.")
     elif final_pred == "Real":
@@ -238,7 +320,9 @@ def explain_text(text: str, trust: dict, final_pred: str):
     else:
         reasons.append("Signals were mixed; result uncertain.")
 
+    # Sort lines by absolute contribution, descending (for a top-5 UI if needed)
     highlighted_sorted = sorted(highlighted, key=lambda d: abs(d["weight"]), reverse=True)
+
     return highlighted_sorted, reasons
 
 
@@ -250,6 +334,7 @@ def explain_text(text: str, trust: dict, final_pred: str):
 def home():
     return jsonify({"message": "Fake News Detector API running ✅"})
 
+
 # ---------- AUTH ----------
 @app.route("/register", methods=["POST"])
 def register():
@@ -259,17 +344,21 @@ def register():
 
     if not username or not password:
         return jsonify({"error": "Missing username or password"}), 400
+
     if len(password) < 8:
         return jsonify({"error": "Password must be at least 8 characters long."}), 400
 
     hashed_pw = generate_password_hash(password)
     try:
         with get_db_connection() as conn:
-            conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_pw))
+            conn.execute(
+                "INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_pw)
+            )
             conn.commit()
         return jsonify({"message": "User registered successfully."})
     except sqlite3.IntegrityError:
         return jsonify({"error": "Username already exists."}), 400
+
 
 @app.route("/login", methods=["POST"])
 def login():
@@ -291,6 +380,7 @@ def login():
     )
     return jsonify({"token": token, "username": username})
 
+
 # ---------- PREDICT ----------
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -308,43 +398,49 @@ def predict():
         return jsonify({"error": ml["error"]}), 500
     heur = analyze_text_heuristics(text)
     trust = compute_trustability(url)
-    final_pred_label = "Fake" if ml["prediction"] == "0" else "Real"
 
-    highlighted_lines, reasons = [], []
-    try:
-        from textblob import TextBlob
-        highlighted_lines, reasons = explain_text(text, trust, final_pred_label)
-    except Exception:
-        pass
+    # explain (safe for popup to ignore)
+    final_pred_label = "Fake" if ml["prediction"] == "0" else "Real"
+    highlighted_lines, reasons = explain_text(text, trust, final_pred_label)
 
     if username:
-        utc_now = now_utc_iso()
         with get_db_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+                INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
                 (
-                    username, headline, url, text,
-                    ml["prediction"], ml["confidence"],
-                    json.dumps(heur), json.dumps(trust),
-                    utc_now,
+                    username,
+                    headline,
+                    url,
+                    text,
+                    ml["prediction"],
+                    ml["confidence"],
+                    json.dumps(heur),
+                    json.dumps(trust),
                 ),
             )
             conn.commit()
 
-    return safe_json({
-        "username": username or "Guest",
-        "headline": headline,
-        "url": url,
-        "prediction": final_pred_label,
-        "confidence": ml["confidence"],
-        "class_probs": ml["class_probs"],
-        "heuristics": heur,
-        "trustability": trust,
-        "explain": {"lines": highlighted_lines[:50], "reasons": reasons},
-    })
+    # Keep original fields for popup compatibility; add extra "explain" fields
+    return safe_json(
+        {
+            "username": username or "Guest",
+            "headline": headline,
+            "url": url,
+            "prediction": final_pred_label,
+            "confidence": ml["confidence"],
+            "class_probs": ml["class_probs"],
+            "heuristics": heur,
+            "trustability": trust,
+            "explain": {
+                "lines": highlighted_lines[:50],  # cap for payload safety
+                "reasons": reasons,
+            },
+        }
+    )
+
 
 # ---------- HISTORY ----------
 @app.route("/get-history", methods=["GET"])
@@ -355,41 +451,51 @@ def get_history():
         return jsonify({"error": "Unauthorized"}), 401
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(
+            """
             SELECT id, headline, url, prediction, confidence, heuristics, trustability, timestamp
             FROM scans WHERE username = ? ORDER BY timestamp DESC
-        """, (username,))
+        """,
+            (username,),
+        )
         rows = cur.fetchall()
-
     history = []
     for r in rows:
-        ts = to_iso_utc(r[7])
-        history.append({
-            "id": r[0],
-            "headline": r[1],
-            "url": r[2],
-            "prediction": "Fake" if r[3] == "0" else "Real",
-            "confidence": r[4],
-            "heuristics": json.loads(r[5]),
-            "trustability": json.loads(r[6]),
-            "timestamp": ts,
-        })
+        history.append(
+            {
+                "id": r[0],
+                "headline": r[1],
+                "url": r[2],
+                "prediction": "Fake" if r[3] == "0" else "Real",
+                "confidence": r[4],
+                "heuristics": json.loads(r[5]),
+                "trustability": json.loads(r[6]),
+                "timestamp": r[7],
+            }
+        )
     return jsonify({"history": history})
+
 
 # ---------- FULL REPORT ----------
 @app.route("/get-report/<int:scan_id>")
 def get_report(scan_id):
-    token = request.args.get("token") or request.headers.get("Authorization", "").replace("Bearer ", "")
+    token = request.args.get("token")
+    if not token:
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
+
     username = verify_jwt(token)
     if not username:
         return "<h3>Unauthorized - Please log in first.</h3>", 401
 
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("""
+        cur.execute(
+            """
             SELECT id, headline, url, text, prediction, confidence, heuristics, trustability, timestamp
             FROM scans WHERE id = ? AND username = ?
-        """, (scan_id, username))
+        """,
+            (scan_id, username),
+        )
         row = cur.fetchone()
 
     if not row:
@@ -397,9 +503,13 @@ def get_report(scan_id):
 
     heur = json.loads(row[6])
     trust = json.loads(row[7])
+
+    # Build explainability for the HTML template
     final_pred_label = "Fake" if row[4] == "0" else "Real"
     highlighted_lines, reasons = explain_text(row[3] or "", trust, final_pred_label)
 
+    # The template (templates/full-report.html) can optionally use:
+    #   highlighted_lines: [{text, weight, tags}], reasons: [str]
     return render_template(
         "full-report.html",
         row=row,
@@ -409,6 +519,7 @@ def get_report(scan_id):
         highlighted_lines=highlighted_lines,
         explain_reasons=reasons,
     )
+
 
 # ============================================================== #
 # MAIN
