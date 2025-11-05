@@ -410,7 +410,7 @@ def predict():
             """
             INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability, timestamp)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
+            """,
             (
                 username,
                 headline,
@@ -424,6 +424,7 @@ def predict():
             ),
         )
         conn.commit()
+
 
     # Keep original fields for popup compatibility; add extra "explain" fields
     return safe_json(
