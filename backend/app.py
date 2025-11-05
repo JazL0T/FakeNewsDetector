@@ -468,14 +468,17 @@ def get_history():
 
     history = []
     for r in rows:
-        # ✅ Proper indentation starts here
         ts = r[7]
         try:
-            # Convert to ISO UTC format if not already
+            # Convert to simple date format YYYY-MM-DD
             parsed = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
-            ts = parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
+            ts = parsed.strftime("%Y-%m-%d")
         except Exception:
-            pass  # already formatted or null
+            try:
+                parsed = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+                ts = parsed.strftime("%Y-%m-%d")
+            except Exception:
+                pass  # leave as-is if parsing fails
 
         history.append(
             {
@@ -486,7 +489,7 @@ def get_history():
                 "confidence": r[4],
                 "heuristics": json.loads(r[5]),
                 "trustability": json.loads(r[6]),
-                "timestamp": ts,  # always ISO UTC
+                "timestamp": ts,  # ✅ date only
             }
         )
 
