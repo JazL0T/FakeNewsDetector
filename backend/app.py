@@ -381,7 +381,6 @@ def login():
     return jsonify({"token": token, "username": username})
 
 
-# ---------- PREDICT ----------
 @app.route("/predict", methods=["POST"])
 def predict():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -390,41 +389,43 @@ def predict():
     text = data.get("text", "")
     headline = data.get("headline", "")
     url = data.get("url", "")
+
     if not text:
         return jsonify({"error": "Missing text"}), 400
 
     ml = predict_fake_news(text)
     if "error" in ml:
         return jsonify({"error": ml["error"]}), 500
+
     heur = analyze_text_heuristics(text)
     trust = compute_trustability(url)
 
-    # explain (safe for popup to ignore)
+    # Explain (safe for popup to ignore)
     final_pred_label = "Fake" if ml["prediction"] == "0" else "Real"
     highlighted_lines, reasons = explain_text(text, trust, final_pred_label)
 
+    # ✅ FIXED INDENTATION HERE
     if username:
-    utc_now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")  # store in ISO UTC format
-    with get_db_connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability, timestamp)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                username,
-                headline,
-                url,
-                text,
-                ml["prediction"],
-                ml["confidence"],
-                json.dumps(heur),
-                json.dumps(trust),
-                utc_now,
-            ),
-        )
-        conn.commit()
-
+        utc_now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")  # store in ISO UTC format
+        with get_db_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    username,
+                    headline,
+                    url,
+                    text,
+                    ml["prediction"],
+                    ml["confidence"],
+                    json.dumps(heur),
+                    json.dumps(trust),
+                    utc_now,
+                ),
+            )
+            conn.commit()
 
     # Keep original fields for popup compatibility; add extra "explain" fields
     return safe_json(
@@ -443,6 +444,7 @@ def predict():
             },
         }
     )
+
 
 
 # ---------- HISTORY ----------
