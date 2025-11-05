@@ -404,24 +404,26 @@ def predict():
     highlighted_lines, reasons = explain_text(text, trust, final_pred_label)
 
     if username:
-        with get_db_connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-                (
-                    username,
-                    headline,
-                    url,
-                    text,
-                    ml["prediction"],
-                    ml["confidence"],
-                    json.dumps(heur),
-                    json.dumps(trust),
-                ),
-            )
-            conn.commit()
+    utc_now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")  # store in ISO UTC format
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+            (
+                username,
+                headline,
+                url,
+                text,
+                ml["prediction"],
+                ml["confidence"],
+                json.dumps(heur),
+                json.dumps(trust),
+                utc_now,
+            ),
+        )
+        conn.commit()
 
     # Keep original fields for popup compatibility; add extra "explain" fields
     return safe_json(
@@ -461,18 +463,27 @@ def get_history():
         rows = cur.fetchall()
     history = []
     for r in rows:
-        history.append(
-            {
-                "id": r[0],
-                "headline": r[1],
-                "url": r[2],
-                "prediction": "Fake" if r[3] == "0" else "Real",
-                "confidence": r[4],
-                "heuristics": json.loads(r[5]),
-                "trustability": json.loads(r[6]),
-                "timestamp": r[7],
-            }
-        )
+    ts = r[7]
+    try:
+        # Convert legacy timestamp format to ISO UTC if needed
+        parsed = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+        ts = parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
+    except Exception:
+        pass  # already in correct format
+
+    history.append(
+        {
+            "id": r[0],
+            "headline": r[1],
+            "url": r[2],
+            "prediction": "Fake" if r[3] == "0" else "Real",
+            "confidence": r[4],
+            "heuristics": json.loads(r[5]),
+            "trustability": json.loads(r[6]),
+            "timestamp": ts,
+        }
+    )
+
     return jsonify({"history": history})
 
 
