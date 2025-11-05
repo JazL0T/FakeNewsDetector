@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Fake News Detector 101</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+
+<body>
+  <!-- ===== Header ===== -->
+  <header class="header">
+    <div class="logo-title">
+      <img src="fakenewslogo.png" alt="Logo" class="logo" />
+      <h1>Fake News Detector 101</h1>
+    </div>
+    <div class="header-sub">
+      <div id="user-status">🔒 Guest mode</div>
+      <div id="login-tip">Login to view history scans and full detailed reports.</div>
+    </div>
+  </header>
+
+  <!-- ===== Visit Website Section ===== -->
+  <section class="welcome">
+    <button id="visit-website" title="Visit our official site">Visit Our Website</button>
+  </section>
+
+  <!-- ===== Tabs ===== -->
+  <div class="tabs">
+    <button id="tab-scan" class="tab active">Scan</button>
+    <button id="tab-history" class="tab">History</button>
+  </div>
+
+  <main>
+    <div id="scan-status" class="status"></div>
+
+    <!-- ===== Scan Section ===== -->
+    <div id="view-scan" class="fadein">
+      <div id="loading-spinner" class="loader hidden"></div>
+
+      <!-- Scan summary -->
+      <div id="result-summary" class="summary hidden">
+        <p id="summary-text"></p>
+      </div>
+
+      <!-- Results -->
+      <div id="results" class="card hidden compact-card">
+        <h3>Scan Results</h3>
+
+        <div class="result-grid">
+          <p class="packed-line"><b>Headline:</b><br>
+            <span id="res-headline" class="result-text"></span>
+          </p>
+
+          <p class="packed-line"><b>URL:</b><br>
+            <a id="res-url" class="result-link" href="#" target="_blank"></a>
+          </p>
+
+          <div class="divider"></div>
+
+          <p class="packed-line"><b>Prediction:</b>
+            <span id="res-prediction" class="result-badge">—</span>
+          </p>
+
+          <div class="confidence-bar-container packed-line">
+            <p><b>Confidence:</b> <span id="res-confidence"></span></p>
+            <div class="confidence-bar">
+              <div id="confidence-fill"></div>
+            </div>
+          </div>
+
+          <div class="divider"></div>
+
+          <p class="packed-line"><b>Domain:</b> <span id="res-domain"></span></p>
+          <p class="packed-line"><b>Trust Score:</b> <span id="res-trust-score"></span></p>
+          <p class="packed-line"><b>Trust Category:</b>
+            <span id="res-trust-cat" class="result-badge">—</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Buttons (Centered) -->
+      <div class="button-group">
+        <button id="scan-btn" class="btn primary">Scan This Page</button>
+        <button id="full-report-btn" class="btn secondary hidden">View Full Report</button>
+      </div>
+
+      <!-- ✅ Chrome Policy Transparency Note -->
+      <p class="muted" style="text-align:center;font-size:11px;">
+        This extension analyzes visible webpage text only when you click “Scan”.
+        No browsing history or personal data is collected.
+      </p>
+    </div>
+
+    <!-- ===== History Section ===== -->
+    <div id="view-history" class="hidden fadein">
+      <div class="card">
+        <h3>Scan History</h3>
+        <p id="history-hint" class="muted">Log in to view your scan history.</p>
+        <div id="history-list"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- ===== Footer ===== -->
+  <footer class="footer">
+    <div class="footer-buttons">
+      <button id="login-link" class="btn secondary">Login</button>
+      <button id="logout-btn" class="btn secondary hidden">Logout</button>
+    </div>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+{
+  "manifest_version": 2,
+  "name": "Fake News Detector 101",
+  "version": "2.0.6",
+  "description": "AI-powered browser extension that detects misleading or false news on any webpage in real time.",
+
+  "icons": {
+    "16": "fakenewslogo.png",
+    "48": "fakenewslogo.png",
+    "128": "fakenewslogo.png"
+  },
+
+  "browser_action": {
+    "default_popup": "popup.html",
+    "default_title": "Fake News Detector 101",
+    "default_icon": {
+      "16": "fakenewslogo.png",
+      "48": "fakenewslogo.png",
+      "128": "fakenewslogo.png"
+    }
+  },
+
+  "background": {
+    "scripts": ["compat.js", "background.js"]
+  },
+
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "storage",
+    "<all_urls>",
+    "https://fakenewsdetector-zjzs.onrender.com/*"
+  ],
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "web_accessible_resources": [
+    "popup.html",
+    "popup.js",
+    "popup.css",
+    "login.html",
+    "login.js",
+    "login_hint.js",
+    "success.html",
+    "success.js",
+    "welcome.html",
+    "welcome.js",
+    "privacy_policy.html",
+    "privacy_policy.js",
+    "fakenewslogo.png",
+    "content.js"
+  ],
+
+  "content_security_policy": "script-src 'self'; object-src 'self';",
+
+  "author": "Fake News Detector 101 Team",
+  "homepage_url": "https://www.fakenewsdetector101.com",
+
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "fakenewsdetector101@fakenewsdetector.com",
+      "strict_min_version": "78.0",
+      "data_collection_permissions": {
+        "required": ["none"],
+        "collects_usage_data": false,
+        "collects_error_data": false,
+        "collects_personal_data": false
+      }
+    }
+  }
+}
