@@ -464,18 +464,27 @@ def get_history():
         rows = cur.fetchall()
     history = []
     for r in rows:
-        history.append(
-            {
-                "id": r[0],
-                "headline": r[1],
-                "url": r[2],
-                "prediction": "Fake" if r[3] == "0" else "Real",
-                "confidence": r[4],
-                "heuristics": json.loads(r[5]),
-                "trustability": json.loads(r[6]),
-                "timestamp": r[7],
-            }
-        )
+    # Ensure timestamp is in ISO UTC format
+    ts = r[7]
+    try:
+        # Convert to ISO UTC format if needed
+        parsed = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+        ts = parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
+    except Exception:
+        pass  # already formatted or null
+
+    history.append(
+        {
+            "id": r[0],
+            "headline": r[1],
+            "url": r[2],
+            "prediction": "Fake" if r[3] == "0" else "Real",
+            "confidence": r[4],
+            "heuristics": json.loads(r[5]),
+            "trustability": json.loads(r[6]),
+            "timestamp": ts,  # always ISO UTC
+        }
+    )
     return jsonify({"history": history})
 
 
