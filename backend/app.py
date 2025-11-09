@@ -14,7 +14,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from textblob import TextBlob
 from dotenv import load_dotenv
 import tldextract
-from transformers import pipeline  # NEW
 
 # ============================================================== #
 # CONFIGURATION
@@ -47,40 +46,30 @@ logging.basicConfig(
 )
 
 # ============================================================== #
-# LOAD MODEL (BERT-first, TF-IDF fallback)
+# LOAD MODEL
 # ============================================================== #
-bert_pipeline = None
 model, vectorizer = None, None
-coef_vector, vocab = None, None
-
-USE_BERT = os.getenv("USE_BERT", "true").lower() == "true"
-BERT_MODEL = os.getenv("BERT_MODEL", "mrm8488/bert-tiny-finetuned-fake-news")
-
-if USE_BERT:
-    try:
-        bert_pipeline = pipeline("text-classification", model=BERT_MODEL)
-        logging.info(f"✅ Loaded BERT model: {BERT_MODEL}")
-    except Exception as e:
-        logging.error(f"❌ Failed to load BERT model: {e}. Falling back to TF-IDF.")
-        bert_pipeline = None
-
-# Fallback to TF-IDF if BERT not available or disabled
-if bert_pipeline is None:
-    try:
-        model = joblib.load(MODEL_PATH)
-        vectorizer = joblib.load(VECTORIZER_PATH)
-        if hasattr(model, "coef_"):
-            coef_arr = getattr(model, "coef_", None)
-            if coef_arr is not None:
-                coef_vector = coef_arr[0]
-                if hasattr(vectorizer, "get_feature_names_out"):
-                    vocab = vectorizer.get_feature_names_out()
-                elif hasattr(vectorizer, "vocabulary_"):
-                    inv = {i: t for t, i in vectorizer.vocabulary_.items()}
-                    vocab = [inv[i] for i in range(len(inv))]
-        logging.info("✅ TF-IDF model and vectorizer loaded successfully (fallback).")
-    except Exception as e:
-        logging.error(f"❌ Failed to load fallback TF-IDF model/vectorizer: {e}")
+coef_vector = None
+vocab = None
+try:
+    model = joblib.load(MODEL_PATH)
+    vectorizer = joblib.load(VECTORIZER_PATH)
+    # Try to expose linear model weights if present (e.g., LogisticRegression / LinearSVC)
+    if hasattr(model, "coef_"):
+        coef_arr = getattr(model, "coef_", None)
+        if coef_arr is not None:
+            # Binary classifier -> shape (1, n_features)
+            coef_vector = coef_arr[0]
+            # get_feature_names_out is available in newer scikit versions
+            if hasattr(vectorizer, "get_feature_names_out"):
+                vocab = vectorizer.get_feature_names_out()
+            elif hasattr(vectorizer, "vocabulary_"):
+                # Fallback: build index->term mapping from vocabulary_
+                inv = {i: t for t, i in vectorizer.vocabulary_.items()}
+                vocab = [inv[i] for i in range(len(inv))]
+    logging.info("✅ Model and vectorizer loaded successfully.")
+except Exception as e:
+    logging.error(f"❌ Failed to load model/vectorizer: {e}")
 
 # ============================================================== #
 # DATABASE SETUP
@@ -132,74 +121,28 @@ def tokenize_text(text: str) -> str:
 
 
 def predict_fake_news(text: str) -> dict:
-    """
-    Returns:
-      {
-        "prediction": "0"|"1",       # "0"=Fake, "1"=Real (keeps your DB schema)
-        "label_name": "Fake|Real",   # human label
-        "confidence": float,         # 0..1
-        "class_probs": {"0": p0, "1": p1}
-      }
-    """
-    # -------- BERT path --------
-    if bert_pipeline is not None:
-        try:
-            # The pipeline handles tokenization & truncation to 512 tokens automatically
-            out = bert_pipeline(text)[0]  # {'label': 'FAKE'/'REAL', 'score': float}
-            raw_label = str(out.get("label", "")).upper()
-            score = float(out.get("score", 0.5))
-
-            # Normalize
-            if "FAKE" in raw_label:
-                pred = "0"
-                label_name = "Fake"
-                p_fake = score
-                p_real = 1.0 - score
-            else:
-                pred = "1"
-                label_name = "Real"
-                p_real = score
-                p_fake = 1.0 - score
-
-            return {
-                "prediction": pred,
-                "label_name": label_name,
-                "confidence": max(p_real, p_fake),
-                "class_probs": {"0": p_fake, "1": p_real},
-            }
-        except Exception as e:
-            logging.error(f"BERT prediction error: {e}")
-            return {"error": f"BERT prediction error: {e}"}
-
-    # -------- TF-IDF fallback --------
     if not model or not vectorizer:
         return {"error": "Model not loaded"}
     features = vectorizer.transform([tokenize_text(text)])
-    pred_int = int(model.predict(features)[0])
-
+    pred = model.predict(features)[0]
+    # Try probabilities if available
     if hasattr(model, "predict_proba"):
         probs = model.predict_proba(features)[0]
-        p_fake, p_real = float(probs[0]), float(probs[1])
-        conf = max(p_fake, p_real)
+        conf = float(max(probs))
+        class_probs = {"0": float(probs[0]), "1": float(probs[1])}
     else:
-        # Decision function fallback
+        # Probability not available — synthesize confidence from decision function if present
         if hasattr(model, "decision_function"):
             df = model.decision_function(features)
+            # squash with logistic for pseudo-confidence
             conf = float(1 / (1 + math.exp(-abs(df[0]))))
-            if pred_int == 1:
-                p_real, p_fake = conf, 1 - conf
-            else:
-                p_fake, p_real = conf, 1 - conf
         else:
-            p_fake = 1 - float(pred_int)
-            p_real = float(pred_int)
-            conf = max(p_fake, p_real)
-
+            conf = 0.5
+        class_probs = {"0": 1 - conf, "1": conf}
     return {
-        "prediction": str(pred_int),
-        "label_name": "Real" if pred_int == 1 else "Fake",
+        "prediction": str(pred),
         "confidence": conf,
-        "class_probs": {"0": p_fake, "1": p_real},
+        "class_probs": class_probs,
     }
 
 
@@ -438,6 +381,7 @@ def login():
     return jsonify({"token": token, "username": username})
 
 
+# ---------- PREDICT ----------
 @app.route("/predict", methods=["POST"])
 def predict():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -446,30 +390,26 @@ def predict():
     text = data.get("text", "")
     headline = data.get("headline", "")
     url = data.get("url", "")
-
     if not text:
         return jsonify({"error": "Missing text"}), 400
 
     ml = predict_fake_news(text)
     if "error" in ml:
         return jsonify({"error": ml["error"]}), 500
-
     heur = analyze_text_heuristics(text)
     trust = compute_trustability(url)
 
-    # Explain (safe for popup to ignore)
+    # explain (safe for popup to ignore)
     final_pred_label = "Fake" if ml["prediction"] == "0" else "Real"
     highlighted_lines, reasons = explain_text(text, trust, final_pred_label)
 
-    # ✅ FIXED INDENTATION HERE
     if username:
-        utc_now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")  # store in ISO UTC format
         with get_db_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
+                INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
                 (
                     username,
                     headline,
@@ -479,7 +419,6 @@ def predict():
                     ml["confidence"],
                     json.dumps(heur),
                     json.dumps(trust),
-                    utc_now,
                 ),
             )
             conn.commit()
@@ -503,7 +442,6 @@ def predict():
     )
 
 
-
 # ---------- HISTORY ----------
 @app.route("/get-history", methods=["GET"])
 def get_history():
@@ -511,32 +449,18 @@ def get_history():
     username = verify_jwt(token)
     if not username:
         return jsonify({"error": "Unauthorized"}), 401
-
     with get_db_connection() as conn:
         cur = conn.cursor()
         cur.execute(
             """
             SELECT id, headline, url, prediction, confidence, heuristics, trustability, timestamp
             FROM scans WHERE username = ? ORDER BY timestamp DESC
-            """,
+        """,
             (username,),
         )
         rows = cur.fetchall()
-
     history = []
     for r in rows:
-        ts = r[7]
-        try:
-            # Convert to simple date format YYYY-MM-DD
-            parsed = datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
-            ts = parsed.strftime("%Y-%m-%d")
-        except Exception:
-            try:
-                parsed = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
-                ts = parsed.strftime("%Y-%m-%d")
-            except Exception:
-                pass  # leave as-is if parsing fails
-
         history.append(
             {
                 "id": r[0],
@@ -546,12 +470,10 @@ def get_history():
                 "confidence": r[4],
                 "heuristics": json.loads(r[5]),
                 "trustability": json.loads(r[6]),
-                "timestamp": ts,  # ✅ date only
+                "timestamp": r[7],
             }
         )
-
     return jsonify({"history": history})
-
 
 
 # ---------- FULL REPORT ----------
