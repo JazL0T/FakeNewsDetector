@@ -131,35 +131,27 @@ def tokenize_text(text: str) -> str:
     return text.lower().strip()
 
 
-def predict_fake_news(text: str) -> dict:
+def predict_fake_news(text: str, force_tfidf: bool = False) -> dict:
     """
     Returns:
       {
-        "prediction": "0"|"1",       # "0"=Fake, "1"=Real (keeps your DB schema)
+        "prediction": "0"|"1",       # "0"=Fake, "1"=Real
         "label_name": "Fake|Real",   # human label
-        "confidence": float,         # 0..1
+        "confidence": float,
         "class_probs": {"0": p0, "1": p1}
       }
     """
-    # -------- BERT path --------
-    if bert_pipeline is not None:
+    # -------- BERT path (only if not forced) --------
+    if not force_tfidf and bert_pipeline is not None:
         try:
-            # The pipeline handles tokenization & truncation to 512 tokens automatically
-            out = bert_pipeline(text)[0]  # {'label': 'FAKE'/'REAL', 'score': float}
+            out = bert_pipeline(text)[0]
             raw_label = str(out.get("label", "")).upper()
             score = float(out.get("score", 0.5))
 
-            # Normalize
             if "FAKE" in raw_label:
-                pred = "0"
-                label_name = "Fake"
-                p_fake = score
-                p_real = 1.0 - score
+                pred, label_name, p_fake, p_real = "0", "Fake", score, 1.0 - score
             else:
-                pred = "1"
-                label_name = "Real"
-                p_real = score
-                p_fake = 1.0 - score
+                pred, label_name, p_fake, p_real = "1", "Real", 1.0 - score, score
 
             return {
                 "prediction": pred,
@@ -169,7 +161,8 @@ def predict_fake_news(text: str) -> dict:
             }
         except Exception as e:
             logging.error(f"BERT prediction error: {e}")
-            return {"error": f"BERT prediction error: {e}"}
+            # fall through to TF-IDF
+            force_tfidf = True
 
     # -------- TF-IDF fallback --------
     if not model or not vectorizer:
@@ -182,7 +175,6 @@ def predict_fake_news(text: str) -> dict:
         p_fake, p_real = float(probs[0]), float(probs[1])
         conf = max(p_fake, p_real)
     else:
-        # Decision function fallback
         if hasattr(model, "decision_function"):
             df = model.decision_function(features)
             conf = float(1 / (1 + math.exp(-abs(df[0]))))
@@ -201,7 +193,6 @@ def predict_fake_news(text: str) -> dict:
         "confidence": conf,
         "class_probs": {"0": p_fake, "1": p_real},
     }
-
 
 def analyze_text_heuristics(text: str) -> dict:
     blob = TextBlob(text)
@@ -450,7 +441,8 @@ def predict():
     if not text:
         return jsonify({"error": "Missing text"}), 400
 
-    ml = predict_fake_news(text)
+    use_bert = bool(username) and bert_pipeline is not None
+    ml = predict_fake_news(text, force_tfidf=not use_bert)
     if "error" in ml:
         return jsonify({"error": ml["error"]}), 500
 
@@ -502,7 +494,83 @@ def predict():
         }
     )
 
+@app.route("/deepcheck", methods=["POST"])
+def deepcheck():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    username = verify_jwt(token)
 
+    # 🔒 Premium: login required
+    if not username:
+        return jsonify({"error": "Please log in to use DeepCheck AI."}), 401
+
+    data = request.get_json() or {}
+    text = data.get("text", "").strip()
+    headline = data.get("headline", "").strip()
+    url = data.get("url", "").strip()
+
+    if not text:
+        return jsonify({"error": "Missing text"}), 400
+
+    # Logged-in users get BERT when available
+    use_bert = bert_pipeline is not None
+    ml = predict_fake_news(text, force_tfidf=not use_bert)
+    if "error" in ml:
+        return jsonify({"error": ml["error"]}), 500
+
+    heur = analyze_text_heuristics(text)
+    trust = compute_trustability(url)
+    final_pred_label = "Fake" if ml["prediction"] == "0" else "Real"
+
+    highlighted_lines, reasons = explain_text(text, trust, final_pred_label)
+
+    # Short human summary
+    conf = ml["confidence"]
+    cat = trust.get("category", "Uncertain")
+    if final_pred_label == "Fake" and cat == "Suspicious":
+        summary = "🔴 The content and its source both appear unreliable."
+    elif final_pred_label == "Fake" and cat == "Trusted":
+        summary = "🟠 Possibly satire or misleading article from a normally reputable source."
+    elif final_pred_label == "Real" and cat == "Trusted":
+        summary = "🟢 Verified article from a reputable outlet."
+    elif final_pred_label == "Real" and cat == "Uncertain":
+        summary = "🟡 Seems factual, but the source is not well-known."
+    else:
+        summary = "⚪ Mixed indicators — verify before trusting completely."
+
+    utc_now = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability, timestamp)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                username,
+                headline,
+                url,
+                text,
+                ml["prediction"],
+                conf,
+                json.dumps(heur),
+                json.dumps(trust),
+                utc_now,
+            ),
+        )
+        conn.commit()
+
+    return safe_json({
+        "headline": headline,
+        "url": url,
+        "prediction": final_pred_label,
+        "confidence": conf,
+        "trustability": trust,
+        "heuristics": heur,
+        "explain": {"lines": highlighted_lines[:50], "reasons": reasons},
+        "summary": summary,
+        "timestamp": utc_now,
+        "user": username,
+        "model_used": "BERT" if use_bert else "TF-IDF"
+    })
 
 # ---------- HISTORY ----------
 @app.route("/get-history", methods=["GET"])
