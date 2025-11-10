@@ -14,6 +14,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from textblob import TextBlob
 from dotenv import load_dotenv
 import tldextract
+from transformers import pipeline  # NEW
+
 
 # ============================================================== #
 # CONFIGURATION
@@ -104,6 +106,15 @@ def init_db():
         )
         conn.commit()
 
+# ===== BERT pipeline (for logged-in users only) =====
+bert_pipeline = None
+try:
+    bert_pipeline = pipeline("text-classification", model="mrm8488/bert-tiny-finetuned-fake-news")
+    logging.info("✅ BERT model loaded successfully.")
+except Exception as e:
+    logging.error(f"❌ Failed to load BERT model: {e}")
+    bert_pipeline = None
+
 
 def get_db_connection():
     return sqlite3.connect(app.config["DB_PATH"])
@@ -145,6 +156,27 @@ def predict_fake_news(text: str) -> dict:
         "class_probs": class_probs,
     }
 
+def predict_bert(text: str) -> dict:
+    if bert_pipeline is None:
+        return {"error": "BERT model not available"}
+    try:
+        out = bert_pipeline(text[:512])[0]  # truncate for safety
+        label = str(out.get("label", "")).upper()
+        score = float(out.get("score", 0.5))
+        if "FAKE" in label:
+            pred, name, p_fake, p_real = "0", "Fake", score, 1 - score
+        else:
+            pred, name, p_fake, p_real = "1", "Real", 1 - score, score
+        return {
+            "prediction": pred,
+            "label_name": name,
+            "confidence": max(p_real, p_fake),
+            "class_probs": {"0": p_fake, "1": p_real},
+            "model_used": "BERT",
+        }
+    except Exception as e:
+        logging.error(f"BERT prediction failed: {e}")
+        return {"error": f"BERT prediction error: {e}"}
 
 def analyze_text_heuristics(text: str) -> dict:
     blob = TextBlob(text)
@@ -380,7 +412,6 @@ def login():
     )
     return jsonify({"token": token, "username": username})
 
-
 # ---------- PREDICT ----------
 @app.route("/predict", methods=["POST"])
 def predict():
@@ -393,9 +424,15 @@ def predict():
     if not text:
         return jsonify({"error": "Missing text"}), 400
 
-    ml = predict_fake_news(text)
+    # ✅ Use BERT if logged in, else TF-IDF
+    if username and bert_pipeline is not None:
+        ml = predict_bert(text)
+    else:
+        ml = predict_fake_news(text)
+
     if "error" in ml:
         return jsonify({"error": ml["error"]}), 500
+
     heur = analyze_text_heuristics(text)
     trust = compute_trustability(url)
 
@@ -409,7 +446,7 @@ def predict():
                 """
                 INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
+                """,
                 (
                     username,
                     headline,
@@ -423,7 +460,6 @@ def predict():
             )
             conn.commit()
 
-    # Keep original fields for popup compatibility; add extra "explain" fields
     return safe_json(
         {
             "username": username or "Guest",
@@ -434,13 +470,13 @@ def predict():
             "class_probs": ml["class_probs"],
             "heuristics": heur,
             "trustability": trust,
+            "model_used": ml.get("model_used", "TF-IDF"),  # ✅ show which model used
             "explain": {
-                "lines": highlighted_lines[:50],  # cap for payload safety
+                "lines": highlighted_lines[:50],
                 "reasons": reasons,
             },
         }
     )
-
 
 # ---------- HISTORY ----------
 @app.route("/get-history", methods=["GET"])
