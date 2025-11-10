@@ -1,7 +1,7 @@
 # ============================================================
-# Fake News Detector 101 — Backend Requirements
+# Fake News Detector 101 — Backend Requirements (Optimized)
 # Version: November 2025
-# Environment: Render / Local (CPU + GPU Compatible)
+# Environment: Render / Local (CPU Only, Fast Cold Start)
 # ============================================================
 
 # ====== Core Framework ======
@@ -17,7 +17,7 @@ MarkupSafe==3.0.3
 # ====== Production Server ======
 gunicorn==23.0.0
 
-# ====== Machine Learning ======
+# ====== Machine Learning (Lightweight) ======
 joblib==1.5.2
 numpy==2.3.4
 scikit-learn==1.7.2
@@ -30,28 +30,13 @@ nltk==3.9.2
 regex==2025.10.23
 tqdm==4.67.1
 
-# ====== Deep Learning (BERT / Transformers) ======
-transformers==4.46.3
-torch==2.5.1
-huggingface-hub==0.25.2
-# Optional acceleration (CPU optimization)
-onnxruntime==1.20.0
-
 # ====== Authentication & Environment ======
 PyJWT==2.10.1
 python-dotenv==1.2.1
 
-# ====== Rate Limiting & Security ======
-flask-limiter==3.9.2
-
-# ====== Network & Domain Trust Analysis ======
-python-whois==0.9.5
+# ====== Domain Trust Analysis ======
 tldextract==5.1.2
 requests==2.32.3
 
 # ====== Logging & Utilities ======
 colorama==0.4.6
-
-# ====== Optional: Ensure TextBlob corpora are downloaded ======
-# Run once locally (not needed on Render):
-# python -m textblob.download_corpora
