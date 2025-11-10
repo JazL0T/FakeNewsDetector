@@ -116,15 +116,29 @@ bert_tokenizer, bert_model = None, None
 LOCAL_MODEL_DIR = os.path.join(os.path.dirname(__file__), "assets", "bert-fake-news-model")
 HUGGINGFACE_MODEL_ID = os.getenv("HUGGINGFACE_MODEL_ID", "JazL0T/bert-fake-news-detector-101") # 🔹 replace with your HF model name
 
+# 🔑 Authenticate with Hugging Face Hub using your access token
+from huggingface_hub import login
+
+hf_token = os.getenv("HUGGINGFACE_HUB_TOKEN")
+if hf_token:
+    try:
+        login(token=hf_token)
+        logging.info("🔑 Logged in to Hugging Face Hub successfully.")
+    except Exception as e:
+        logging.error(f"⚠️ Failed to log in to Hugging Face Hub: {e}")
+else:
+    logging.warning("⚠️ No Hugging Face token found — trying public access.")
+
 try:
     if os.path.exists(os.path.join(LOCAL_MODEL_DIR, "config.json")):
         logging.info("🧠 Loading fine-tuned LOCAL BERT model from assets/bert-fake-news-model ...")
         bert_tokenizer = BertTokenizer.from_pretrained(LOCAL_MODEL_DIR)
         bert_model = BertForSequenceClassification.from_pretrained(LOCAL_MODEL_DIR)
+
     else:
         logging.info(f"☁️ Loading fine-tuned BERT model from Hugging Face Hub ({HUGGINGFACE_MODEL_ID}) ...")
-        bert_tokenizer = BertTokenizer.from_pretrained(HUGGINGFACE_MODEL_ID)
-        bert_model = BertForSequenceClassification.from_pretrained(HUGGINGFACE_MODEL_ID)
+        bert_tokenizer = BertTokenizer.from_pretrained(HUGGINGFACE_MODEL_ID, use_auth_token=hf_token)
+        bert_model = BertForSequenceClassification.from_pretrained(HUGGINGFACE_MODEL_ID, use_auth_token=hf_token)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     bert_model.to(device)
