@@ -105,26 +105,34 @@ def init_db():
         conn.commit()
 
 # ============================================================ #
-#  Load Fine-Tuned Local BERT Model (GPU / CPU Auto)
+#  Load Fine-Tuned BERT Model (Local or from Hugging Face)
 # ============================================================ #
 import torch
 from transformers import BertTokenizer, BertForSequenceClassification
 
-BERT_MODEL_DIR = os.path.join(os.path.dirname(__file__), "assets", "bert-fake-news-model")
 bert_tokenizer, bert_model = None, None
 
+# Try local first, then fall back to Hugging Face for Render
+LOCAL_MODEL_DIR = os.path.join(os.path.dirname(__file__), "assets", "bert-fake-news-model")
+HUGGINGFACE_MODEL_ID = os.getenv("HUGGINGFACE_MODEL_ID", "JazLOT/bert-fake-news-detector-101") # 🔹 replace with your HF model name
+
 try:
-    logging.info("🧠 Loading fine-tuned local BERT model from assets/bert-fake-news-model ...")
-    bert_tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_DIR)
-    bert_model = BertForSequenceClassification.from_pretrained(BERT_MODEL_DIR)
+    if os.path.exists(os.path.join(LOCAL_MODEL_DIR, "config.json")):
+        logging.info("🧠 Loading fine-tuned LOCAL BERT model from assets/bert-fake-news-model ...")
+        bert_tokenizer = BertTokenizer.from_pretrained(LOCAL_MODEL_DIR)
+        bert_model = BertForSequenceClassification.from_pretrained(LOCAL_MODEL_DIR)
+    else:
+        logging.info(f"☁️ Loading fine-tuned BERT model from Hugging Face Hub ({HUGGINGFACE_MODEL_ID}) ...")
+        bert_tokenizer = BertTokenizer.from_pretrained(HUGGINGFACE_MODEL_ID)
+        bert_model = BertForSequenceClassification.from_pretrained(HUGGINGFACE_MODEL_ID)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     bert_model.to(device)
     bert_model.eval()
 
-    logging.info(f"✅ Local BERT model loaded successfully ({'GPU' if torch.cuda.is_available() else 'CPU'} mode).")
+    logging.info(f"✅ BERT model loaded successfully ({'GPU' if torch.cuda.is_available() else 'CPU'} mode).")
 except Exception as e:
-    logging.error(f"❌ Failed to load local BERT model: {e}")
+    logging.error(f"❌ Failed to load any BERT model: {e}")
     bert_model = None
 
 def get_db_connection():
@@ -683,6 +691,18 @@ def get_report(scan_id):
         explain_reasons=reasons,
     )
 
+# ============================================================ #
+# Optional Warm-Up (Preload model to speed up first request)
+# ============================================================ #
+logging.info("🌐 Warming up model with a short test inference...")
+if bert_model and bert_tokenizer:
+    try:
+        test_inputs = bert_tokenizer("This is a test news article.", return_tensors="pt", truncation=True)
+        with torch.no_grad():
+            bert_model(**test_inputs)
+        logging.info("🔥 Model warm-up complete.")
+    except Exception as e:
+        logging.error(f"⚠️ Warm-up failed: {e}")
 
 # ============================================================== #
 # MAIN
