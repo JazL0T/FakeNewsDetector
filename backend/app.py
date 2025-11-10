@@ -114,7 +114,7 @@ bert_tokenizer, bert_model = None, None
 
 # Try local first, then fall back to Hugging Face for Render
 LOCAL_MODEL_DIR = os.path.join(os.path.dirname(__file__), "assets", "bert-fake-news-model")
-HUGGINGFACE_MODEL_ID = os.getenv("HUGGINGFACE_MODEL_ID", "JazLOT/bert-fake-news-detector-101") # 🔹 replace with your HF model name
+HUGGINGFACE_MODEL_ID = os.getenv("HUGGINGFACE_MODEL_ID", "JazL0T/bert-fake-news-detector-101") # 🔹 replace with your HF model name
 
 try:
     if os.path.exists(os.path.join(LOCAL_MODEL_DIR, "config.json")):
