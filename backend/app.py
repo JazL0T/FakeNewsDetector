@@ -109,53 +109,47 @@ def init_db():
         conn.commit()
 
 # ============================================================ #
-#  Load Fine-Tuned BERT Model (Local or from Hugging Face)
+#  Load Fine-Tuned DistilBERT Model (Faster + Lightweight for Render)
 # ============================================================ #
 import torch
-from transformers import BertTokenizer, BertForSequenceClassification
+from transformers import DistilBertTokenizer, DistilBertForSequenceClassification
 
 bert_tokenizer, bert_model = None, None
 
-# Try local first, then fall back to Hugging Face for Render
-LOCAL_MODEL_DIR = os.path.join(os.path.dirname(__file__), "assets", "bert-fake-news-model")
-HUGGINGFACE_MODEL_ID = os.getenv("HUGGINGFACE_MODEL_ID", "JazL0T/bert-fake-news-detector-101") # 🔹 replace with your HF model name
+# Local model directory (optional)
+LOCAL_MODEL_DIR = os.path.join(os.path.dirname(__file__), "assets", "distilbert-fake-news-model")
 
-# 🔑 Authenticate with Hugging Face Hub using your access token
-from huggingface_hub import login
-
-hf_token = os.getenv("HUGGINGFACE_HUB_TOKEN")
-if hf_token:
-    try:
-        login(token=hf_token)
-        logging.info("🔑 Logged in to Hugging Face Hub successfully.")
-    except Exception as e:
-        logging.error(f"⚠️ Failed to log in to Hugging Face Hub: {e}")
-else:
-    logging.warning("⚠️ No Hugging Face token found — trying public access.")
+# Hugging Face fallback (your uploaded model)
+HUGGINGFACE_MODEL_ID = os.getenv(
+    "HUGGINGFACE_MODEL_ID",
+    "JazL0T/distilbert-fake-news-detector-101"  # 👈 replace with your own HF repo if needed
+)
 
 try:
+    logging.info("⚡ Loading DistilBERT fake news model (optimized)...")
+
     if os.path.exists(os.path.join(LOCAL_MODEL_DIR, "config.json")):
-        logging.info("🧠 Loading fine-tuned LOCAL BERT model from assets/bert-fake-news-model ...")
-        bert_tokenizer = BertTokenizer.from_pretrained(LOCAL_MODEL_DIR)
-        bert_model = BertForSequenceClassification.from_pretrained(LOCAL_MODEL_DIR)
-
+        logging.info("🧠 Loading local DistilBERT model...")
+        bert_tokenizer = DistilBertTokenizer.from_pretrained(LOCAL_MODEL_DIR)
+        bert_model = DistilBertForSequenceClassification.from_pretrained(LOCAL_MODEL_DIR)
     else:
-        logging.info(f"☁️ Loading fine-tuned BERT model from Hugging Face Hub ({HUGGINGFACE_MODEL_ID}) ...")
-        bert_tokenizer = BertTokenizer.from_pretrained(HUGGINGFACE_MODEL_ID, token=hf_token)
-        bert_model = BertForSequenceClassification.from_pretrained(HUGGINGFACE_MODEL_ID, token=hf_token)
+        logging.info(f"☁️ Loading DistilBERT from Hugging Face Hub ({HUGGINGFACE_MODEL_ID}) ...")
+        bert_tokenizer = DistilBertTokenizer.from_pretrained(HUGGINGFACE_MODEL_ID)
+        bert_model = DistilBertForSequenceClassification.from_pretrained(HUGGINGFACE_MODEL_ID)
 
+    # ✅ Device setup
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     bert_model.to(device)
     bert_model.eval()
 
-    logging.info(f"✅ BERT model loaded successfully ({'GPU' if torch.cuda.is_available() else 'CPU'} mode).")
+    logging.info(f"✅ DistilBERT model loaded successfully ({'GPU' if torch.cuda.is_available() else 'CPU'})")
+
 except Exception as e:
-    logging.error(f"❌ Failed to load any BERT model: {e}")
+    logging.error(f"❌ Failed to load DistilBERT: {e}")
     bert_model = None
 
 def get_db_connection():
     return sqlite3.connect(app.config["DB_PATH"])
-
 
 init_db()
 
