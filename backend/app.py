@@ -478,6 +478,95 @@ def predict():
         }
     )
 
+# ---------- DEEPCHECK (BERT ONLY FOR LOGGED-IN USERS) ----------
+@app.route("/deepcheck", methods=["POST"])
+def deepcheck():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    username = verify_jwt(token)
+
+    if not username:
+        return jsonify({"error": "Unauthorized. Please log in to use DeepCheck."}), 401
+    if bert_pipeline is None:
+        return jsonify({"error": "BERT model not available."}), 500
+
+    data = request.get_json() or {}
+    text = data.get("text", "")
+    url = data.get("url", "")
+    headline = data.get("headline", "")
+    if not text:
+        return jsonify({"error": "Missing text"}), 400
+
+    # 🧠 Split text into manageable chunks/sentences
+    import re
+    sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
+    results = []
+
+    for s in sentences[:20]:  # limit to first 20 sentences for performance
+        try:
+            res = bert_pipeline(s[:512])[0]
+            label = str(res.get("label", "")).upper()
+            score = float(res.get("score", 0.5))
+            pred = "Fake" if "FAKE" in label else "Real"
+            results.append({
+                "sentence": s,
+                "prediction": pred,
+                "confidence": round(score, 3)
+            })
+        except Exception as e:
+            results.append({
+                "sentence": s,
+                "error": str(e)
+            })
+
+    # Compute summary stats
+    fake_count = sum(1 for r in results if r.get("prediction") == "Fake")
+    real_count = sum(1 for r in results if r.get("prediction") == "Real")
+    total = fake_count + real_count
+    fake_ratio = round((fake_count / total) * 100, 1) if total else 0
+
+    trust = compute_trustability(url)
+    summary = {
+        "headline": headline,
+        "url": url,
+        "total_sentences": total,
+        "fake_sentences": fake_count,
+        "real_sentences": real_count,
+        "fake_ratio": fake_ratio,
+        "trustability": trust,
+        "conclusion": (
+            "Mostly Real ✅" if fake_ratio < 30 else
+            "Mixed ⚠️" if fake_ratio < 60 else
+            "Mostly Fake ❌"
+        )
+    }
+
+    # 🧾 Store scan to database
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                username,
+                headline,
+                url,
+                text,
+                "1" if fake_ratio < 50 else "0",
+                1 - (fake_ratio / 100),
+                json.dumps({"fake_ratio": fake_ratio}),
+                json.dumps(trust),
+            ),
+        )
+        conn.commit()
+
+    return safe_json({
+        "username": username,
+        "summary": summary,
+        "details": results,
+        "model_used": "BERT DeepCheck"
+    })
+
 # ---------- HISTORY ----------
 @app.route("/get-history", methods=["GET"])
 def get_history():
