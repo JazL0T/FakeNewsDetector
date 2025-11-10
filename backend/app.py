@@ -36,6 +36,10 @@ VECTORIZER_PATH = os.getenv(
     "VECTORIZER_PATH", os.path.join(os.path.dirname(__file__), "models", "vectorizer2.pkl")
 )
 
+# Confidence calibration to reduce "100.0%" predictions
+BERT_TEMPERATURE = float(os.getenv("BERT_TEMPERATURE", "1.6"))  # adjust higher for softer results
+CONF_CAP = 0.999  # never show perfect 100%
+
 # ============================================================== #
 # LOGGING
 # ============================================================== #
@@ -163,26 +167,41 @@ def tokenize_text(text: str) -> str:
     text = re.sub(r"[^a-zA-Z\s]", "", text)
     return text.lower().strip()
 
-
 def predict_fake_news(text: str) -> dict:
     if not model or not vectorizer:
         return {"error": "Model not loaded"}
+
     features = vectorizer.transform([tokenize_text(text)])
     pred = model.predict(features)[0]
+
     # Try probabilities if available
     if hasattr(model, "predict_proba"):
         probs = model.predict_proba(features)[0]
+
+        # 🧠 Add smoothing so probabilities aren't always 0 or 1
+        probs = [min(max(p, 1e-5), 1 - 1e-5) for p in probs]
+
         conf = float(max(probs))
-        class_probs = {"0": float(probs[0]), "1": float(probs[1])}
+        conf = min(conf, CONF_CAP)            # cap at 99.9%
+        conf = round(conf, 4)                 # round for display
+
+        class_probs = {
+            "0": round(float(probs[0]), 4),
+            "1": round(float(probs[1]), 4),
+        }
+
     else:
         # Probability not available — synthesize confidence from decision function if present
         if hasattr(model, "decision_function"):
             df = model.decision_function(features)
-            # squash with logistic for pseudo-confidence
             conf = float(1 / (1 + math.exp(-abs(df[0]))))
         else:
             conf = 0.5
-        class_probs = {"0": 1 - conf, "1": conf}
+
+        conf = min(conf, CONF_CAP)
+        conf = round(conf, 4)
+        class_probs = {"0": round(1 - conf, 4), "1": round(conf, 4)}
+
     return {
         "prediction": str(pred),
         "confidence": conf,
@@ -210,18 +229,30 @@ def predict_bert(text: str) -> dict:
         with torch.no_grad():
             outputs = bert_model(**inputs)
             logits = outputs.logits
-            probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
 
-        pred_idx = int(torch.argmax(logits, dim=-1))
+        # 🔥 Apply temperature scaling to make confidence realistic
+        temperature = max(BERT_TEMPERATURE, 1.0)
+        probs = torch.softmax(logits / temperature, dim=-1).cpu().numpy()[0]
+
+        pred_idx = int(torch.argmax(probs, axis=-1))
         pred_label = "Real" if pred_idx == 1 else "Fake"
+
+        # 🧠 Cap and round the confidence
         conf = float(max(probs))
+        conf = min(conf, CONF_CAP)
+        conf = round(conf, 4)
+
         return {
             "prediction": str(pred_idx),
             "label_name": pred_label,
             "confidence": conf,
-            "class_probs": {"0": float(probs[0]), "1": float(probs[1])},
+            "class_probs": {
+                "0": round(float(probs[0]), 4),
+                "1": round(float(probs[1]), 4),
+            },
             "model_used": "Local BERT",
         }
+
     except Exception as e:
         logging.error(f"BERT prediction failed: {e}")
         return {"error": f"BERT prediction error: {e}"}
