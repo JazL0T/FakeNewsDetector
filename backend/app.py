@@ -491,63 +491,97 @@ def login():
     )
     return jsonify({"token": token, "username": username})
 
-# ---------- PREDICT ----------
+# ---------- PREDICT ---------- #
 @app.route("/predict", methods=["POST"])
 def predict():
+    # Extract and verify JWT
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
     username = verify_jwt(token)
+
+    # Parse request JSON
     data = request.get_json() or {}
     text = data.get("text", "")
     headline = data.get("headline", "")
     url = data.get("url", "")
+
     if not text:
         return jsonify({"error": "Missing text"}), 400
 
-    # ✅ Use fine-tuned BERT if logged in, else TF-IDF fallback
-    if username and bert_model is not None and bert_tokenizer is not None:
-        ml = predict_bert(text)
-    else:
-        ml = predict_fake_news(text)
-
-    if "error" in ml:
-        return jsonify({"error": ml["error"]}), 500
-
+    # Always calculate heuristics and trustability
     heur = analyze_text_heuristics(text)
     trust = compute_trustability(url)
 
-    # explain (safe for popup to ignore)
-    final_pred_label = "Fake" if ml["prediction"] == "0" else "Real"
-    highlighted_lines, reasons = explain_text(text, trust, final_pred_label)
+    # =========================================================
+    # 🚫 Restrict AI Models — Guests get only heuristic analysis
+    # =========================================================
+    if not username:
+        logging.info("Guest access detected — skipping ML models.")
+        return safe_json({
+            "username": "Guest",
+            "headline": headline,
+            "url": url,
+            "prediction": "Unavailable (Guest Access Only)",
+            "confidence": None,
+            "heuristics": heur,
+            "trustability": trust,
+            "model_used": "None (Guest access only)",
+            "note": "🔒 Please log in to use AI-powered detection (TF-IDF or BERT)."
+        })
 
-    # Save scan to database if logged in
-    if username:
-        with get_db_connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    username,
-                    headline,
-                    url,
-                    text,
-                    ml["prediction"],
-                    ml["confidence"],
-                    json.dumps(heur),
-                    json.dumps(trust),
-                ),
-            )
-            conn.commit()
+    # =========================================================
+    # 🧠 Logged-in User — Use AI Models
+    # =========================================================
+    try:
+        if bert_model and bert_tokenizer:
+            ml = predict_bert(text)
+        elif model and vectorizer:
+            ml = predict_fake_news(text)
+        else:
+            return jsonify({"error": "No AI model available."}), 500
 
-    return safe_json(
-        {
-            "username": username or "Guest",
+        if "error" in ml:
+            return jsonify({"error": ml["error"]}), 500
+
+        # Convert model output to readable label
+        final_pred_label = "Fake" if ml["prediction"] in ("0", 0, "fake", "Fake") else "Real"
+
+        # Explainability & Trust
+        highlighted_lines, reasons = explain_text(text, trust, final_pred_label)
+
+        # =========================================================
+        # 💾 Store Scan in Database (only for logged-in users)
+        # =========================================================
+        try:
+            with get_db_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        username,
+                        headline,
+                        url,
+                        text,
+                        ml["prediction"],
+                        ml["confidence"],
+                        json.dumps(heur),
+                        json.dumps(trust),
+                    ),
+                )
+                conn.commit()
+        except sqlite3.Error as e:
+            logging.error(f"Database insert error: {e}")
+
+        # =========================================================
+        # ✅ Return Full AI Analysis Result
+        # =========================================================
+        return safe_json({
+            "username": username,
             "headline": headline,
             "url": url,
             "prediction": final_pred_label,
             "confidence": ml["confidence"],
-            "class_probs": ml["class_probs"],
             "heuristics": heur,
             "trustability": trust,
             "model_used": ml.get("model_used", "TF-IDF"),
@@ -555,8 +589,11 @@ def predict():
                 "lines": highlighted_lines[:50],
                 "reasons": reasons,
             },
-        }
-    )
+        })
+
+    except Exception as e:
+        logging.error(f"Prediction failed: {e}")
+        return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
 
 # ---------- DEEPCHECK (Fine-Tuned BERT) ----------
 @app.route("/deepcheck", methods=["POST"])
