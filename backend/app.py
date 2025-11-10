@@ -721,7 +721,7 @@ def deepcheck():
     except Exception as e:
         logging.exception(f"❌ DeepCheck unexpected error: {e}")
         return jsonify({"error": f"Internal server error during DeepCheck: {str(e)}"}), 500
-
+    
 # ---------- HISTORY ----------
 @app.route("/get-history", methods=["GET"])
 def get_history():
