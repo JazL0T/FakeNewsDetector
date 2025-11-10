@@ -8,3 +8,5 @@ services:
     envVars:
       - key: PORT
         value: 5000
+      - key: HUGGINGFACE_HUB_TOKEN
+        sync: false
