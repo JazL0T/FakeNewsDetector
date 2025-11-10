@@ -137,8 +137,8 @@ try:
 
     else:
         logging.info(f"☁️ Loading fine-tuned BERT model from Hugging Face Hub ({HUGGINGFACE_MODEL_ID}) ...")
-        bert_tokenizer = BertTokenizer.from_pretrained(HUGGINGFACE_MODEL_ID, use_auth_token=hf_token)
-        bert_model = BertForSequenceClassification.from_pretrained(HUGGINGFACE_MODEL_ID, use_auth_token=hf_token)
+        bert_tokenizer = BertTokenizer.from_pretrained(HUGGINGFACE_MODEL_ID, token=hf_token)
+        bert_model = BertForSequenceClassification.from_pretrained(HUGGINGFACE_MODEL_ID, token=hf_token)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     bert_model.to(device)
