@@ -36,10 +36,6 @@ VECTORIZER_PATH = os.getenv(
     "VECTORIZER_PATH", os.path.join(os.path.dirname(__file__), "models", "vectorizer2.pkl")
 )
 
-# Confidence calibration to reduce "100.0%" predictions
-BERT_TEMPERATURE = float(os.getenv("BERT_TEMPERATURE", "1.6"))  # adjust higher for softer results
-CONF_CAP = 0.999  # never show perfect 100%
-
 # ============================================================== #
 # LOGGING
 # ============================================================== #
@@ -108,48 +104,10 @@ def init_db():
         )
         conn.commit()
 
-# ============================================================ #
-#  Load Fine-Tuned DistilBERT Model (Faster + Lightweight for Render)
-# ============================================================ #
-import torch
-from transformers import DistilBertTokenizer, DistilBertForSequenceClassification
-
-bert_tokenizer, bert_model = None, None
-
-# Local model directory (optional)
-LOCAL_MODEL_DIR = os.path.join(os.path.dirname(__file__), "assets", "distilbert-fake-news-model")
-
-# Hugging Face fallback (your uploaded model)
-HUGGINGFACE_MODEL_ID = os.getenv(
-    "HUGGINGFACE_MODEL_ID",
-    "JazL0T/distilbert-fake-news-detector-101"  # 👈 replace with your own HF repo if needed
-)
-
-try:
-    logging.info("⚡ Loading DistilBERT fake news model (optimized)...")
-
-    if os.path.exists(os.path.join(LOCAL_MODEL_DIR, "config.json")):
-        logging.info("🧠 Loading local DistilBERT model...")
-        bert_tokenizer = DistilBertTokenizer.from_pretrained(LOCAL_MODEL_DIR)
-        bert_model = DistilBertForSequenceClassification.from_pretrained(LOCAL_MODEL_DIR)
-    else:
-        logging.info(f"☁️ Loading DistilBERT from Hugging Face Hub ({HUGGINGFACE_MODEL_ID}) ...")
-        bert_tokenizer = DistilBertTokenizer.from_pretrained(HUGGINGFACE_MODEL_ID)
-        bert_model = DistilBertForSequenceClassification.from_pretrained(HUGGINGFACE_MODEL_ID)
-
-    # ✅ Device setup
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    bert_model.to(device)
-    bert_model.eval()
-
-    logging.info(f"✅ DistilBERT model loaded successfully ({'GPU' if torch.cuda.is_available() else 'CPU'})")
-
-except Exception as e:
-    logging.error(f"❌ Failed to load DistilBERT: {e}")
-    bert_model = None
 
 def get_db_connection():
     return sqlite3.connect(app.config["DB_PATH"])
+
 
 init_db()
 
@@ -161,95 +119,32 @@ def tokenize_text(text: str) -> str:
     text = re.sub(r"[^a-zA-Z\s]", "", text)
     return text.lower().strip()
 
+
 def predict_fake_news(text: str) -> dict:
     if not model or not vectorizer:
         return {"error": "Model not loaded"}
-
     features = vectorizer.transform([tokenize_text(text)])
     pred = model.predict(features)[0]
-
     # Try probabilities if available
     if hasattr(model, "predict_proba"):
         probs = model.predict_proba(features)[0]
-
-        # 🧠 Add smoothing so probabilities aren't always 0 or 1
-        probs = [min(max(p, 1e-5), 1 - 1e-5) for p in probs]
-
         conf = float(max(probs))
-        conf = min(conf, CONF_CAP)            # cap at 99.9%
-        conf = round(conf, 4)                 # round for display
-
-        class_probs = {
-            "0": round(float(probs[0]), 4),
-            "1": round(float(probs[1]), 4),
-        }
-
+        class_probs = {"0": float(probs[0]), "1": float(probs[1])}
     else:
         # Probability not available — synthesize confidence from decision function if present
         if hasattr(model, "decision_function"):
             df = model.decision_function(features)
+            # squash with logistic for pseudo-confidence
             conf = float(1 / (1 + math.exp(-abs(df[0]))))
         else:
             conf = 0.5
-
-        conf = min(conf, CONF_CAP)
-        conf = round(conf, 4)
-        class_probs = {"0": round(1 - conf, 4), "1": round(conf, 4)}
-
+        class_probs = {"0": 1 - conf, "1": conf}
     return {
         "prediction": str(pred),
         "confidence": conf,
         "class_probs": class_probs,
     }
 
-def predict_bert(text: str) -> dict:
-    if bert_model is None or bert_tokenizer is None:
-        return {"error": "BERT model not available"}
-
-    try:
-        # 🔹 Tokenize input safely (truncate to 512 tokens)
-        inputs = bert_tokenizer(
-            text,
-            truncation=True,
-            padding=True,
-            max_length=512,
-            return_tensors="pt"
-        )
-
-        # 🔹 Move tensors to GPU or CPU
-        inputs = {k: v.to(bert_model.device) for k, v in inputs.items()}
-
-        # 🔹 Run model prediction
-        with torch.no_grad():
-            outputs = bert_model(**inputs)
-            logits = outputs.logits
-
-        # 🔥 Apply temperature scaling to make confidence realistic
-        temperature = max(BERT_TEMPERATURE, 1.0)
-        probs = torch.softmax(logits / temperature, dim=-1).cpu().numpy()[0]
-
-        pred_idx = int(torch.argmax(probs, axis=-1))
-        pred_label = "Real" if pred_idx == 1 else "Fake"
-
-        # 🧠 Cap and round the confidence
-        conf = float(max(probs))
-        conf = min(conf, CONF_CAP)
-        conf = round(conf, 4)
-
-        return {
-            "prediction": str(pred_idx),
-            "label_name": pred_label,
-            "confidence": conf,
-            "class_probs": {
-                "0": round(float(probs[0]), 4),
-                "1": round(float(probs[1]), 4),
-            },
-            "model_used": "Local BERT",
-        }
-
-    except Exception as e:
-        logging.error(f"BERT prediction failed: {e}")
-        return {"error": f"BERT prediction error: {e}"}
 
 def analyze_text_heuristics(text: str) -> dict:
     blob = TextBlob(text)
@@ -485,253 +380,67 @@ def login():
     )
     return jsonify({"token": token, "username": username})
 
-# ---------- PREDICT ---------- #
+
+# ---------- PREDICT ----------
 @app.route("/predict", methods=["POST"])
 def predict():
-    # =========================================================
-    # 🔐 Authentication Check
-    # =========================================================
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
     username = verify_jwt(token)
-
-    # =========================================================
-    # 🧾 Parse Input Data
-    # =========================================================
     data = request.get_json() or {}
     text = data.get("text", "")
     headline = data.get("headline", "")
     url = data.get("url", "")
-
     if not text:
         return jsonify({"error": "Missing text"}), 400
 
-    # Always compute heuristics and trust even for guests
+    ml = predict_fake_news(text)
+    if "error" in ml:
+        return jsonify({"error": ml["error"]}), 500
     heur = analyze_text_heuristics(text)
     trust = compute_trustability(url)
 
-    # =========================================================
-    # 🧠 Guest Mode — Use TF-IDF model only (Basic AI)
-    # =========================================================
-    if not username:
-        logging.info("Guest access detected — using TF-IDF basic model only.")
-        try:
-            if model and vectorizer:
-                ml = predict_fake_news(text)
-                if "error" in ml:
-                    raise Exception(ml["error"])
+    # explain (safe for popup to ignore)
+    final_pred_label = "Fake" if ml["prediction"] == "0" else "Real"
+    highlighted_lines, reasons = explain_text(text, trust, final_pred_label)
 
-                final_pred_label = (
-                    "Fake" if ml["prediction"] in ("0", 0, "fake", "Fake") else "Real"
-                )
+    if username:
+        with get_db_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+                (
+                    username,
+                    headline,
+                    url,
+                    text,
+                    ml["prediction"],
+                    ml["confidence"],
+                    json.dumps(heur),
+                    json.dumps(trust),
+                ),
+            )
+            conn.commit()
 
-                return safe_json({
-                    "username": "Guest",
-                    "headline": headline,
-                    "url": url,
-                    "prediction": final_pred_label,
-                    "confidence": ml["confidence"],
-                    "heuristics": heur,
-                    "trustability": trust,
-                    "model_used": "TF-IDF (Guest Mode)",
-                    "note": "🔒 Log in to unlock DeepCheck (AI+ with BERT)"
-                })
-
-            else:
-                return safe_json({
-                    "username": "Guest",
-                    "headline": headline,
-                    "url": url,
-                    "prediction": "Unavailable (No model found)",
-                    "confidence": None,
-                    "heuristics": heur,
-                    "trustability": trust,
-                    "model_used": "None"
-                })
-
-        except Exception as e:
-            logging.error(f"Guest TF-IDF prediction failed: {e}")
-            return jsonify({"error": f"Guest TF-IDF prediction failed: {e}"}), 500
-
-    # =========================================================
-    # 🧠 Logged-in Users — Use TF-IDF (Default Scan)
-    # =========================================================
-    try:
-        # Always use TF-IDF for normal scan
-        if model and vectorizer:
-            ml = predict_fake_news(text)
-        else:
-            return jsonify({"error": "TF-IDF model unavailable"}), 500
-
-        if "error" in ml:
-            return jsonify({"error": ml["error"]}), 500
-
-        final_pred_label = (
-            "Fake" if ml["prediction"] in ("0", 0, "fake", "Fake") else "Real"
-        )
-
-        # Generate explainability and trust summary
-        highlighted_lines, reasons = explain_text(text, trust, final_pred_label)
-
-        # =========================================================
-        # 💾 Store Scan in Database
-        # =========================================================
-        try:
-            with get_db_connection() as conn:
-                conn.execute(
-                    """
-                    INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        username,
-                        headline,
-                        url,
-                        text,
-                        ml["prediction"],
-                        ml["confidence"],
-                        json.dumps(heur),
-                        json.dumps(trust),
-                    ),
-                )
-                conn.commit()
-        except sqlite3.Error as e:
-            logging.error(f"Database insert error: {e}")
-
-        # =========================================================
-        # ✅ Return Response
-        # =========================================================
-        return safe_json({
-            "username": username,
+    # Keep original fields for popup compatibility; add extra "explain" fields
+    return safe_json(
+        {
+            "username": username or "Guest",
             "headline": headline,
             "url": url,
             "prediction": final_pred_label,
             "confidence": ml["confidence"],
+            "class_probs": ml["class_probs"],
             "heuristics": heur,
             "trustability": trust,
-            "model_used": "TF-IDF (Authenticated)",
             "explain": {
-                "lines": highlighted_lines[:50],
+                "lines": highlighted_lines[:50],  # cap for payload safety
                 "reasons": reasons,
             },
-        })
-
-    except Exception as e:
-        logging.error(f"Prediction failed: {e}")
-        return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
-
-# ---------- DEEPCHECK (Fast Batched BERT for Logged-In Users) ---------- #
-@app.route("/deepcheck", methods=["POST"])
-def deepcheck():
-    try:
-        token = request.headers.get("Authorization", "").replace("Bearer ", "")
-        username = verify_jwt(token)
-
-        if not username:
-            return jsonify({"error": "Unauthorized. Please log in to use DeepCheck (AI+)."}), 401
-
-        if bert_model is None or bert_tokenizer is None:
-            return jsonify({"error": "BERT model not available."}), 500
-
-        data = request.get_json(silent=True) or {}
-        text = data.get("text", "")
-        url = data.get("url", "")
-        headline = data.get("headline", "")
-
-        if not text:
-            return jsonify({"error": "Missing text"}), 400
-
-        import re
-        # ✅ Split text into sentences, but limit for speed
-        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()][:15]
-        if not sentences:
-            return jsonify({"error": "No valid sentences found for analysis."}), 400
-
-        # ⚡ Batch all sentences at once
-        inputs = bert_tokenizer(
-            sentences,
-            truncation=True,
-            padding=True,
-            max_length=256,
-            return_tensors="pt"
-        ).to(bert_model.device)
-
-        with torch.no_grad():
-            outputs = bert_model(**inputs)
-            logits = outputs.logits
-            probs = torch.softmax(logits, dim=-1).cpu().numpy()
-
-        results = []
-        for i, s in enumerate(sentences):
-            pred_idx = int(probs[i].argmax())
-            pred = "Real" if pred_idx == 1 else "Fake"
-            conf = float(probs[i][pred_idx])
-            results.append({
-                "sentence": s,
-                "prediction": pred,
-                "confidence": round(conf, 3)
-            })
-
-        # 🔹 Aggregate results
-        fake_count = sum(1 for r in results if r["prediction"] == "Fake")
-        real_count = sum(1 for r in results if r["prediction"] == "Real")
-        total = fake_count + real_count
-        fake_ratio = round((fake_count / total) * 100, 1) if total else 0
-
-        trust = compute_trustability(url)
-        summary = {
-            "headline": headline,
-            "url": url,
-            "total_sentences": total,
-            "fake_sentences": fake_count,
-            "real_sentences": real_count,
-            "fake_ratio": fake_ratio,
-            "trustability": trust,
-            "conclusion": (
-                "Mostly Real ✅" if fake_ratio < 30 else
-                "Mixed ⚠️" if fake_ratio < 60 else
-                "Mostly Fake ❌"
-            ),
-            "tips": [
-                "🧠 Batched sentences — now 10× faster.",
-                "✂️ Analyze fewer sentences for instant results.",
-                "🔄 Use DistilBERT for even faster analysis.",
-                "🕒 Keep Render awake to avoid cold starts."
-            ]
         }
+    )
 
-        # 💾 Save result to database
-        try:
-            with get_db_connection() as conn:
-                conn.execute(
-                    """
-                    INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        username,
-                        headline,
-                        url,
-                        text,
-                        "1" if fake_ratio < 50 else "0",
-                        1 - (fake_ratio / 100),
-                        json.dumps({"fake_ratio": fake_ratio}),
-                        json.dumps(trust),
-                    ),
-                )
-                conn.commit()
-        except Exception as e:
-            logging.error(f"Database error: {e}")
-
-        return safe_json({
-            "username": username,
-            "summary": summary,
-            "details": results,
-            "model_used": "BERT (DeepCheck AI+ — Batched)"
-        })
-
-    except Exception as e:
-        logging.exception(f"❌ DeepCheck unexpected error: {e}")
-        return jsonify({"error": f"Internal server error during DeepCheck: {str(e)}"}), 500
 
 # ---------- HISTORY ----------
 @app.route("/get-history", methods=["GET"])
@@ -811,23 +520,6 @@ def get_report(scan_id):
         explain_reasons=reasons,
     )
 
-# ============================================================ #
-# Optional Warm-Up (Preload model to speed up first request)
-# ============================================================ #
-logging.info("🌐 Warming up model with a short test inference...")
-if bert_model and bert_tokenizer:
-    try:
-        test_inputs = bert_tokenizer("This is a test news article.", return_tensors="pt", truncation=True)
-        with torch.no_grad():
-            bert_model(**test_inputs)
-        logging.info("🔥 Model warm-up complete.")
-    except Exception as e:
-        logging.error(f"⚠️ Warm-up failed: {e}")
-
-@app.errorhandler(Exception)
-def handle_exception(e):
-    logging.exception(f"⚠️ Global error handler caught: {e}")
-    return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 # ============================================================== #
 # MAIN
