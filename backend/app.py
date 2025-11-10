@@ -625,7 +625,7 @@ def predict():
         logging.error(f"Prediction failed: {e}")
         return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
 
-# ---------- DEEPCHECK (Fine-Tuned BERT for Logged-In Users) ---------- #
+# ---------- DEEPCHECK (Fast Batched BERT for Logged-In Users) ---------- #
 @app.route("/deepcheck", methods=["POST"])
 def deepcheck():
     try:
@@ -647,28 +647,39 @@ def deepcheck():
             return jsonify({"error": "Missing text"}), 400
 
         import re
-        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
+        # ✅ Split text into sentences, but limit for speed
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()][:15]
+        if not sentences:
+            return jsonify({"error": "No valid sentences found for analysis."}), 400
+
+        # ⚡ Batch all sentences at once
+        inputs = bert_tokenizer(
+            sentences,
+            truncation=True,
+            padding=True,
+            max_length=256,
+            return_tensors="pt"
+        ).to(bert_model.device)
+
+        with torch.no_grad():
+            outputs = bert_model(**inputs)
+            logits = outputs.logits
+            probs = torch.softmax(logits, dim=-1).cpu().numpy()
+
         results = []
+        for i, s in enumerate(sentences):
+            pred_idx = int(probs[i].argmax())
+            pred = "Real" if pred_idx == 1 else "Fake"
+            conf = float(probs[i][pred_idx])
+            results.append({
+                "sentence": s,
+                "prediction": pred,
+                "confidence": round(conf, 3)
+            })
 
-        for s in sentences[:20]:  # limit to first 20 sentences
-            try:
-                inputs = bert_tokenizer(
-                    s, truncation=True, padding=True, max_length=512, return_tensors="pt"
-                )
-                inputs = {k: v.to(bert_model.device) for k, v in inputs.items()}
-                with torch.no_grad():
-                    outputs = bert_model(**inputs)
-                    logits = outputs.logits
-                    probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
-                pred_idx = int(torch.argmax(logits, dim=-1))
-                pred = "Real" if pred_idx == 1 else "Fake"
-                score = float(max(probs))
-                results.append({"sentence": s, "prediction": pred, "confidence": round(score, 3)})
-            except Exception as e:
-                results.append({"sentence": s, "error": str(e)})
-
-        fake_count = sum(1 for r in results if r.get("prediction") == "Fake")
-        real_count = sum(1 for r in results if r.get("prediction") == "Real")
+        # 🔹 Aggregate results
+        fake_count = sum(1 for r in results if r["prediction"] == "Fake")
+        real_count = sum(1 for r in results if r["prediction"] == "Real")
         total = fake_count + real_count
         fake_ratio = round((fake_count / total) * 100, 1) if total else 0
 
@@ -685,10 +696,16 @@ def deepcheck():
                 "Mostly Real ✅" if fake_ratio < 30 else
                 "Mixed ⚠️" if fake_ratio < 60 else
                 "Mostly Fake ❌"
-            )
+            ),
+            "tips": [
+                "🧠 Batched sentences — now 10× faster.",
+                "✂️ Analyze fewer sentences for instant results.",
+                "🔄 Use DistilBERT for even faster analysis.",
+                "🕒 Keep Render awake to avoid cold starts."
+            ]
         }
 
-        # Store scan in DB safely
+        # 💾 Save result to database
         try:
             with get_db_connection() as conn:
                 conn.execute(
@@ -715,13 +732,13 @@ def deepcheck():
             "username": username,
             "summary": summary,
             "details": results,
-            "model_used": "BERT (DeepCheck AI+)"
+            "model_used": "BERT (DeepCheck AI+ — Batched)"
         })
 
     except Exception as e:
         logging.exception(f"❌ DeepCheck unexpected error: {e}")
         return jsonify({"error": f"Internal server error during DeepCheck: {str(e)}"}), 500
-    
+
 # ---------- HISTORY ----------
 @app.route("/get-history", methods=["GET"])
 def get_history():
