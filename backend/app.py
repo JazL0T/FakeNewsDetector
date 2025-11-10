@@ -494,11 +494,15 @@ def login():
 # ---------- PREDICT ---------- #
 @app.route("/predict", methods=["POST"])
 def predict():
-    # Extract and verify JWT
+    # =========================================================
+    # 🔐 Authentication Check
+    # =========================================================
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
     username = verify_jwt(token)
 
-    # Parse request JSON
+    # =========================================================
+    # 🧾 Parse Input Data
+    # =========================================================
     data = request.get_json() or {}
     text = data.get("text", "")
     headline = data.get("headline", "")
@@ -507,49 +511,75 @@ def predict():
     if not text:
         return jsonify({"error": "Missing text"}), 400
 
-    # Always calculate heuristics and trustability
+    # Always compute heuristics and trust even for guests
     heur = analyze_text_heuristics(text)
     trust = compute_trustability(url)
 
     # =========================================================
-    # 🚫 Restrict AI Models — Guests get only heuristic analysis
+    # 🧠 Guest Mode — Use TF-IDF model only (Basic AI)
     # =========================================================
     if not username:
-        logging.info("Guest access detected — skipping ML models.")
-        return safe_json({
-            "username": "Guest",
-            "headline": headline,
-            "url": url,
-            "prediction": "Unavailable (Guest Access Only)",
-            "confidence": None,
-            "heuristics": heur,
-            "trustability": trust,
-            "model_used": "None (Guest access only)",
-            "note": "🔒 Please log in to use AI-powered detection (TF-IDF or BERT)."
-        })
+        logging.info("Guest access detected — using TF-IDF basic model only.")
+        try:
+            if model and vectorizer:
+                ml = predict_fake_news(text)
+                if "error" in ml:
+                    raise Exception(ml["error"])
+
+                final_pred_label = (
+                    "Fake" if ml["prediction"] in ("0", 0, "fake", "Fake") else "Real"
+                )
+
+                return safe_json({
+                    "username": "Guest",
+                    "headline": headline,
+                    "url": url,
+                    "prediction": final_pred_label,
+                    "confidence": ml["confidence"],
+                    "heuristics": heur,
+                    "trustability": trust,
+                    "model_used": "TF-IDF (Guest Mode)",
+                    "note": "🔒 Log in to unlock DeepCheck (AI+ with BERT)"
+                })
+
+            else:
+                return safe_json({
+                    "username": "Guest",
+                    "headline": headline,
+                    "url": url,
+                    "prediction": "Unavailable (No model found)",
+                    "confidence": None,
+                    "heuristics": heur,
+                    "trustability": trust,
+                    "model_used": "None"
+                })
+
+        except Exception as e:
+            logging.error(f"Guest TF-IDF prediction failed: {e}")
+            return jsonify({"error": f"Guest TF-IDF prediction failed: {e}"}), 500
 
     # =========================================================
-    # 🧠 Logged-in User — Use AI Models
+    # 🧠 Logged-in Users — Use TF-IDF (Default Scan)
     # =========================================================
     try:
-        if bert_model and bert_tokenizer:
-            ml = predict_bert(text)
-        elif model and vectorizer:
+        # Always use TF-IDF for normal scan
+        if model and vectorizer:
             ml = predict_fake_news(text)
         else:
-            return jsonify({"error": "No AI model available."}), 500
+            return jsonify({"error": "TF-IDF model unavailable"}), 500
 
         if "error" in ml:
             return jsonify({"error": ml["error"]}), 500
 
-        # Convert model output to readable label
-        final_pred_label = "Fake" if ml["prediction"] in ("0", 0, "fake", "Fake") else "Real"
+        final_pred_label = (
+            "Fake" if ml["prediction"] in ("0", 0, "fake", "Fake") else "Real"
+        )
 
-        # Explainability & Trust
+        # Generate explainability and trust summary
         highlighted_lines, reasons = explain_text(text, trust, final_pred_label)
 
         # =========================================================
-        # 💾 Store Scan in Database (only for logged-in users)
+        # 💾 Store Scan in Database
         # =========================================================
         try:
             with get_db_connection() as conn:
@@ -574,7 +604,7 @@ def predict():
             logging.error(f"Database insert error: {e}")
 
         # =========================================================
-        # ✅ Return Full AI Analysis Result
+        # ✅ Return Response
         # =========================================================
         return safe_json({
             "username": username,
@@ -584,7 +614,7 @@ def predict():
             "confidence": ml["confidence"],
             "heuristics": heur,
             "trustability": trust,
-            "model_used": ml.get("model_used", "TF-IDF"),
+            "model_used": "TF-IDF (Authenticated)",
             "explain": {
                 "lines": highlighted_lines[:50],
                 "reasons": reasons,
@@ -595,14 +625,14 @@ def predict():
         logging.error(f"Prediction failed: {e}")
         return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
 
-# ---------- DEEPCHECK (Fine-Tuned BERT) ----------
+# ---------- DEEPCHECK (Fine-Tuned BERT for Logged-In Users) ---------- #
 @app.route("/deepcheck", methods=["POST"])
 def deepcheck():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
     username = verify_jwt(token)
 
     if not username:
-        return jsonify({"error": "Unauthorized. Please log in to use DeepCheck."}), 401
+        return jsonify({"error": "Unauthorized. Please log in to use DeepCheck (AI+)."}), 401
     if bert_model is None or bert_tokenizer is None:
         return jsonify({"error": "BERT model not available."}), 500
 
@@ -610,22 +640,18 @@ def deepcheck():
     text = data.get("text", "")
     url = data.get("url", "")
     headline = data.get("headline", "")
+
     if not text:
         return jsonify({"error": "Missing text"}), 400
 
-    # 🧠 Split into manageable sentences
     import re
     sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
     results = []
 
-    for s in sentences[:20]:  # limit to 20 for performance
+    for s in sentences[:20]:  # limit to first 20 sentences
         try:
             inputs = bert_tokenizer(
-                s,
-                truncation=True,
-                padding=True,
-                max_length=512,
-                return_tensors="pt"
+                s, truncation=True, padding=True, max_length=512, return_tensors="pt"
             )
             inputs = {k: v.to(bert_model.device) for k, v in inputs.items()}
             with torch.no_grad():
@@ -635,18 +661,10 @@ def deepcheck():
             pred_idx = int(torch.argmax(logits, dim=-1))
             pred = "Real" if pred_idx == 1 else "Fake"
             score = float(max(probs))
-            results.append({
-                "sentence": s,
-                "prediction": pred,
-                "confidence": round(score, 3)
-            })
+            results.append({"sentence": s, "prediction": pred, "confidence": round(score, 3)})
         except Exception as e:
-            results.append({
-                "sentence": s,
-                "error": str(e)
-            })
+            results.append({"sentence": s, "error": str(e)})
 
-    # Compute summary stats
     fake_count = sum(1 for r in results if r.get("prediction") == "Fake")
     real_count = sum(1 for r in results if r.get("prediction") == "Real")
     total = fake_count + real_count
@@ -668,7 +686,7 @@ def deepcheck():
         )
     }
 
-    # 🧾 Store DeepCheck scan in DB
+    # Store scan in DB
     with get_db_connection() as conn:
         conn.execute(
             """
@@ -692,7 +710,7 @@ def deepcheck():
         "username": username,
         "summary": summary,
         "details": results,
-        "model_used": "Local Fine-Tuned BERT DeepCheck"
+        "model_used": "BERT (DeepCheck AI+)"
     })
 
 # ---------- HISTORY ----------
