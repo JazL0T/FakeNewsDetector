@@ -628,90 +628,99 @@ def predict():
 # ---------- DEEPCHECK (Fine-Tuned BERT for Logged-In Users) ---------- #
 @app.route("/deepcheck", methods=["POST"])
 def deepcheck():
-    token = request.headers.get("Authorization", "").replace("Bearer ", "")
-    username = verify_jwt(token)
+    try:
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
+        username = verify_jwt(token)
 
-    if not username:
-        return jsonify({"error": "Unauthorized. Please log in to use DeepCheck (AI+)."}), 401
-    if bert_model is None or bert_tokenizer is None:
-        return jsonify({"error": "BERT model not available."}), 500
+        if not username:
+            return jsonify({"error": "Unauthorized. Please log in to use DeepCheck (AI+)."}), 401
 
-    data = request.get_json() or {}
-    text = data.get("text", "")
-    url = data.get("url", "")
-    headline = data.get("headline", "")
+        if bert_model is None or bert_tokenizer is None:
+            return jsonify({"error": "BERT model not available."}), 500
 
-    if not text:
-        return jsonify({"error": "Missing text"}), 400
+        data = request.get_json(silent=True) or {}
+        text = data.get("text", "")
+        url = data.get("url", "")
+        headline = data.get("headline", "")
 
-    import re
-    sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
-    results = []
+        if not text:
+            return jsonify({"error": "Missing text"}), 400
 
-    for s in sentences[:20]:  # limit to first 20 sentences
-        try:
-            inputs = bert_tokenizer(
-                s, truncation=True, padding=True, max_length=512, return_tensors="pt"
+        import re
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
+        results = []
+
+        for s in sentences[:20]:  # limit to first 20 sentences
+            try:
+                inputs = bert_tokenizer(
+                    s, truncation=True, padding=True, max_length=512, return_tensors="pt"
+                )
+                inputs = {k: v.to(bert_model.device) for k, v in inputs.items()}
+                with torch.no_grad():
+                    outputs = bert_model(**inputs)
+                    logits = outputs.logits
+                    probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
+                pred_idx = int(torch.argmax(logits, dim=-1))
+                pred = "Real" if pred_idx == 1 else "Fake"
+                score = float(max(probs))
+                results.append({"sentence": s, "prediction": pred, "confidence": round(score, 3)})
+            except Exception as e:
+                results.append({"sentence": s, "error": str(e)})
+
+        fake_count = sum(1 for r in results if r.get("prediction") == "Fake")
+        real_count = sum(1 for r in results if r.get("prediction") == "Real")
+        total = fake_count + real_count
+        fake_ratio = round((fake_count / total) * 100, 1) if total else 0
+
+        trust = compute_trustability(url)
+        summary = {
+            "headline": headline,
+            "url": url,
+            "total_sentences": total,
+            "fake_sentences": fake_count,
+            "real_sentences": real_count,
+            "fake_ratio": fake_ratio,
+            "trustability": trust,
+            "conclusion": (
+                "Mostly Real ✅" if fake_ratio < 30 else
+                "Mixed ⚠️" if fake_ratio < 60 else
+                "Mostly Fake ❌"
             )
-            inputs = {k: v.to(bert_model.device) for k, v in inputs.items()}
-            with torch.no_grad():
-                outputs = bert_model(**inputs)
-                logits = outputs.logits
-                probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
-            pred_idx = int(torch.argmax(logits, dim=-1))
-            pred = "Real" if pred_idx == 1 else "Fake"
-            score = float(max(probs))
-            results.append({"sentence": s, "prediction": pred, "confidence": round(score, 3)})
+        }
+
+        # Store scan in DB safely
+        try:
+            with get_db_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        username,
+                        headline,
+                        url,
+                        text,
+                        "1" if fake_ratio < 50 else "0",
+                        1 - (fake_ratio / 100),
+                        json.dumps({"fake_ratio": fake_ratio}),
+                        json.dumps(trust),
+                    ),
+                )
+                conn.commit()
         except Exception as e:
-            results.append({"sentence": s, "error": str(e)})
+            logging.error(f"Database error: {e}")
 
-    fake_count = sum(1 for r in results if r.get("prediction") == "Fake")
-    real_count = sum(1 for r in results if r.get("prediction") == "Real")
-    total = fake_count + real_count
-    fake_ratio = round((fake_count / total) * 100, 1) if total else 0
+        return safe_json({
+            "username": username,
+            "summary": summary,
+            "details": results,
+            "model_used": "BERT (DeepCheck AI+)"
+        })
 
-    trust = compute_trustability(url)
-    summary = {
-        "headline": headline,
-        "url": url,
-        "total_sentences": total,
-        "fake_sentences": fake_count,
-        "real_sentences": real_count,
-        "fake_ratio": fake_ratio,
-        "trustability": trust,
-        "conclusion": (
-            "Mostly Real ✅" if fake_ratio < 30 else
-            "Mixed ⚠️" if fake_ratio < 60 else
-            "Mostly Fake ❌"
-        )
-    }
-
-    # Store scan in DB
-    with get_db_connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                username,
-                headline,
-                url,
-                text,
-                "1" if fake_ratio < 50 else "0",
-                1 - (fake_ratio / 100),
-                json.dumps({"fake_ratio": fake_ratio}),
-                json.dumps(trust),
-            ),
-        )
-        conn.commit()
-
-    return safe_json({
-        "username": username,
-        "summary": summary,
-        "details": results,
-        "model_used": "BERT (DeepCheck AI+)"
-    })
+    except Exception as e:
+        logging.exception(f"❌ DeepCheck unexpected error: {e}")
+        return jsonify({"error": f"Internal server error during DeepCheck: {str(e)}"}), 500
 
 # ---------- HISTORY ----------
 @app.route("/get-history", methods=["GET"])
@@ -803,6 +812,11 @@ if bert_model and bert_tokenizer:
         logging.info("🔥 Model warm-up complete.")
     except Exception as e:
         logging.error(f"⚠️ Warm-up failed: {e}")
+
+@app.errorhandler(Exception)
+def handle_exception(e):
+    logging.exception(f"⚠️ Global error handler caught: {e}")
+    return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 # ============================================================== #
 # MAIN
