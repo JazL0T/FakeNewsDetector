@@ -14,8 +14,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from textblob import TextBlob
 from dotenv import load_dotenv
 import tldextract
-from transformers import pipeline  # NEW
-
 
 # ============================================================== #
 # CONFIGURATION
@@ -106,15 +104,28 @@ def init_db():
         )
         conn.commit()
 
-# ===== BERT pipeline (for logged-in users only) =====
-bert_pipeline = None
-try:
-    bert_pipeline = pipeline("text-classification", model="mrm8488/bert-tiny-finetuned-fake-news")
-    logging.info("✅ BERT model loaded successfully.")
-except Exception as e:
-    logging.error(f"❌ Failed to load BERT model: {e}")
-    bert_pipeline = None
+# ============================================================ #
+#  Load Fine-Tuned Local BERT Model (GPU / CPU Auto)
+# ============================================================ #
+import torch
+from transformers import BertTokenizer, BertForSequenceClassification
 
+BERT_MODEL_DIR = os.path.join(os.path.dirname(__file__), "assets", "bert-fake-news-model")
+bert_tokenizer, bert_model = None, None
+
+try:
+    logging.info("🧠 Loading fine-tuned local BERT model from assets/bert-fake-news-model ...")
+    bert_tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_DIR)
+    bert_model = BertForSequenceClassification.from_pretrained(BERT_MODEL_DIR)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    bert_model.to(device)
+    bert_model.eval()
+
+    logging.info(f"✅ Local BERT model loaded successfully ({'GPU' if torch.cuda.is_available() else 'CPU'} mode).")
+except Exception as e:
+    logging.error(f"❌ Failed to load local BERT model: {e}")
+    bert_model = None
 
 def get_db_connection():
     return sqlite3.connect(app.config["DB_PATH"])
@@ -157,22 +168,37 @@ def predict_fake_news(text: str) -> dict:
     }
 
 def predict_bert(text: str) -> dict:
-    if bert_pipeline is None:
+    if bert_model is None or bert_tokenizer is None:
         return {"error": "BERT model not available"}
+
     try:
-        out = bert_pipeline(text[:512])[0]  # truncate for safety
-        label = str(out.get("label", "")).upper()
-        score = float(out.get("score", 0.5))
-        if "FAKE" in label:
-            pred, name, p_fake, p_real = "0", "Fake", score, 1 - score
-        else:
-            pred, name, p_fake, p_real = "1", "Real", 1 - score, score
+        # 🔹 Tokenize input safely (truncate to 512 tokens)
+        inputs = bert_tokenizer(
+            text,
+            truncation=True,
+            padding=True,
+            max_length=512,
+            return_tensors="pt"
+        )
+
+        # 🔹 Move tensors to GPU or CPU
+        inputs = {k: v.to(bert_model.device) for k, v in inputs.items()}
+
+        # 🔹 Run model prediction
+        with torch.no_grad():
+            outputs = bert_model(**inputs)
+            logits = outputs.logits
+            probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
+
+        pred_idx = int(torch.argmax(logits, dim=-1))
+        pred_label = "Real" if pred_idx == 1 else "Fake"
+        conf = float(max(probs))
         return {
-            "prediction": pred,
-            "label_name": name,
-            "confidence": max(p_real, p_fake),
-            "class_probs": {"0": p_fake, "1": p_real},
-            "model_used": "BERT",
+            "prediction": str(pred_idx),
+            "label_name": pred_label,
+            "confidence": conf,
+            "class_probs": {"0": float(probs[0]), "1": float(probs[1])},
+            "model_used": "Local BERT",
         }
     except Exception as e:
         logging.error(f"BERT prediction failed: {e}")
@@ -424,8 +450,8 @@ def predict():
     if not text:
         return jsonify({"error": "Missing text"}), 400
 
-    # ✅ Use BERT if logged in, else TF-IDF
-    if username and bert_pipeline is not None:
+    # ✅ Use fine-tuned BERT if logged in, else TF-IDF fallback
+    if username and bert_model is not None and bert_tokenizer is not None:
         ml = predict_bert(text)
     else:
         ml = predict_fake_news(text)
@@ -440,6 +466,7 @@ def predict():
     final_pred_label = "Fake" if ml["prediction"] == "0" else "Real"
     highlighted_lines, reasons = explain_text(text, trust, final_pred_label)
 
+    # Save scan to database if logged in
     if username:
         with get_db_connection() as conn:
             conn.execute(
@@ -470,7 +497,7 @@ def predict():
             "class_probs": ml["class_probs"],
             "heuristics": heur,
             "trustability": trust,
-            "model_used": ml.get("model_used", "TF-IDF"),  # ✅ show which model used
+            "model_used": ml.get("model_used", "TF-IDF"),
             "explain": {
                 "lines": highlighted_lines[:50],
                 "reasons": reasons,
@@ -478,7 +505,7 @@ def predict():
         }
     )
 
-# ---------- DEEPCHECK (BERT ONLY FOR LOGGED-IN USERS) ----------
+# ---------- DEEPCHECK (Fine-Tuned BERT) ----------
 @app.route("/deepcheck", methods=["POST"])
 def deepcheck():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -486,7 +513,7 @@ def deepcheck():
 
     if not username:
         return jsonify({"error": "Unauthorized. Please log in to use DeepCheck."}), 401
-    if bert_pipeline is None:
+    if bert_model is None or bert_tokenizer is None:
         return jsonify({"error": "BERT model not available."}), 500
 
     data = request.get_json() or {}
@@ -496,17 +523,28 @@ def deepcheck():
     if not text:
         return jsonify({"error": "Missing text"}), 400
 
-    # 🧠 Split text into manageable chunks/sentences
+    # 🧠 Split into manageable sentences
     import re
     sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text) if s.strip()]
     results = []
 
-    for s in sentences[:20]:  # limit to first 20 sentences for performance
+    for s in sentences[:20]:  # limit to 20 for performance
         try:
-            res = bert_pipeline(s[:512])[0]
-            label = str(res.get("label", "")).upper()
-            score = float(res.get("score", 0.5))
-            pred = "Fake" if "FAKE" in label else "Real"
+            inputs = bert_tokenizer(
+                s,
+                truncation=True,
+                padding=True,
+                max_length=512,
+                return_tensors="pt"
+            )
+            inputs = {k: v.to(bert_model.device) for k, v in inputs.items()}
+            with torch.no_grad():
+                outputs = bert_model(**inputs)
+                logits = outputs.logits
+                probs = torch.softmax(logits, dim=-1).cpu().numpy()[0]
+            pred_idx = int(torch.argmax(logits, dim=-1))
+            pred = "Real" if pred_idx == 1 else "Fake"
+            score = float(max(probs))
             results.append({
                 "sentence": s,
                 "prediction": pred,
@@ -540,7 +578,7 @@ def deepcheck():
         )
     }
 
-    # 🧾 Store scan to database
+    # 🧾 Store DeepCheck scan in DB
     with get_db_connection() as conn:
         conn.execute(
             """
@@ -564,7 +602,7 @@ def deepcheck():
         "username": username,
         "summary": summary,
         "details": results,
-        "model_used": "BERT DeepCheck"
+        "model_used": "Local Fine-Tuned BERT DeepCheck"
     })
 
 # ---------- HISTORY ----------
