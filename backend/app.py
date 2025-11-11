@@ -1,12 +1,6 @@
 # ==============================================================
 #  Fake News Detector 101 — Optimized Explainable AI API
-#  Version: Render-Ready (2025) + Enhanced (Top 4 Upgrades)
-# ==============================================================
-# ✨ Key Improvements:
-# 1. Background model preloading (faster cold start)
-# 2. Graceful prediction error handling
-# 3. Rate limiting (anti-abuse)
-# 4. Cached domain trustability
+#  Version: Render-Ready (2025) + EN/MY Dual Model + Top 4 Upgrades
 # ==============================================================
 
 import warnings
@@ -24,88 +18,100 @@ import tldextract
 from functools import lru_cache
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from langdetect import detect, LangDetectException
 
-# ==============================================================
+# ============================================================== #
 # CONFIGURATION
-# ==============================================================
+# ============================================================== #
 load_dotenv()
+
+BASE_DIR = os.path.dirname(__file__)
+MODELS_DIR = os.path.join(BASE_DIR, "models")
 
 app = Flask(__name__, template_folder="templates", static_folder="static")
 CORS(app, origins=["*"])
 
-# Security & App Config
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "supersecretkey")
 app.config["JWT_SECRET"] = os.getenv("JWT_SECRET", "jwt_secret")
-app.config["DB_PATH"] = os.getenv(
-    "DB_PATH", os.path.join(os.path.dirname(__file__), "users.db")
-)
+app.config["DB_PATH"] = os.getenv("DB_PATH", os.path.join(BASE_DIR, "users.db"))
 
-MODEL_PATH = os.getenv(
-    "MODEL_PATH", os.path.join(os.path.dirname(__file__), "models", "model2.pkl")
-)
-VECTORIZER_PATH = os.getenv(
-    "VECTORIZER_PATH", os.path.join(os.path.dirname(__file__), "models", "vectorizer2.pkl")
-)
+# EN (global/English) model (existing)
+MODEL_PATH_EN = os.getenv("MODEL_PATH", os.path.join(MODELS_DIR, "model2.pkl"))
+VECTORIZER_PATH_EN = os.getenv("VECTORIZER_PATH", os.path.join(MODELS_DIR, "vectorizer2.pkl"))
 
-# ==============================================================
+# MY (Malay) model (trained by your new script)
+MODEL_PATH_MY = os.getenv("MALAY_MODEL_PATH", os.path.join(MODELS_DIR, "malay_model.pkl"))
+VECTORIZER_PATH_MY = os.getenv("MALAY_VECTORIZER_PATH", os.path.join(MODELS_DIR, "malay_vectorizer.pkl"))
+
+# ============================================================== #
 # LOGGING
-# ==============================================================
+# ============================================================== #
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-# ==============================================================
-# RATE LIMITING (Flask-Limiter)
-# ==============================================================
-limiter = Limiter(
-    get_remote_address,
-    app=app,
-    default_limits=["50 per minute"],  # Global default
-)
-logging.info("🛡️ Rate limiting enabled: 50 requests/minute per client.")
+# ============================================================== #
+# RATE LIMITING
+# ============================================================== #
+limiter = Limiter(get_remote_address, app=app, default_limits=["50 per minute"])
+logging.info("🛡️ Rate limiting: 50 req/min per client")
 
-# ==============================================================
-# MODEL (Lazy Load + Background Preload)
-# ==============================================================
-_model, _vectorizer, _coef_vector, _vocab = None, None, None, None
+# ============================================================== #
+# MODELS (Lazy load both EN and MY)
+# ============================================================== #
+# EN
+_en_model = _en_vectorizer = _en_coef = None
+# MY
+_my_model = _my_vectorizer = _my_coef = None
+
 _model_lock = threading.Lock()
 
-def load_model():
-    """Load model and vectorizer only once (thread-safe)."""
-    global _model, _vectorizer, _coef_vector, _vocab
-    if _model is not None and _vectorizer is not None:
-        return _model, _vectorizer
+def _load_pair(model_path, vec_path):
+    m = joblib.load(model_path)
+    v = joblib.load(vec_path)
+    coef = m.coef_[0] if hasattr(m, "coef_") else None
+    return m, v, coef
+
+def load_models_if_needed(lang: str):
+    """
+    lang: 'en' or 'ms'
+    """
+    global _en_model, _en_vectorizer, _en_coef
+    global _my_model, _my_vectorizer, _my_coef
 
     with _model_lock:
-        if _model is None or _vectorizer is None:
-            t0 = time.time()
-            _model = joblib.load(MODEL_PATH)
-            _vectorizer = joblib.load(VECTORIZER_PATH)
-            if hasattr(_model, "coef_"):
-                _coef_vector = _model.coef_[0]
-                if hasattr(_vectorizer, "get_feature_names_out"):
-                    _vocab = _vectorizer.get_feature_names_out()
-            logging.info(f"✅ Model loaded in {time.time()-t0:.2f}s")
-    return _model, _vectorizer
+        if lang == "en":
+            if _en_model is None or _en_vectorizer is None:
+                t0 = time.time()
+                _en_model, _en_vectorizer, _en_coef = _load_pair(MODEL_PATH_EN, VECTORIZER_PATH_EN)
+                logging.info(f"✅ EN model loaded in {time.time()-t0:.2f}s")
+        else:  # 'ms'
+            if _my_model is None or _my_vectorizer is None:
+                if not (os.path.exists(MODEL_PATH_MY) and os.path.exists(VECTORIZER_PATH_MY)):
+                    # If Malay model missing, we won't fail — we'll fallback to EN later
+                    logging.warning("⚠️ Malay model/vectorizer not found — will fallback to EN.")
+                    return
+                t0 = time.time()
+                _my_model, _my_vectorizer, _my_coef = _load_pair(MODEL_PATH_MY, VECTORIZER_PATH_MY)
+                logging.info(f"✅ MY model loaded in {time.time()-t0:.2f}s")
 
-# 🔹 Background preload to warm up model at startup
+# Warm EN model in background (fastest route for most users)
 def preload_model_async():
     def _load():
         try:
-            load_model()
-            logging.info("🚀 Background model preload complete.")
+            load_models_if_needed("en")
+            logging.info("🚀 Background EN model preload complete.")
         except Exception as e:
-            logging.error(f"⚠️ Background model preload failed: {e}")
+            logging.error(f"⚠️ Background preload failed: {e}")
     threading.Thread(target=_load, daemon=True).start()
 
-# Start background preload
 preload_model_async()
 
-# ==============================================================
+# ============================================================== #
 # DATABASE (SQLite WAL + Retry)
-# ==============================================================
+# ============================================================== #
 def init_db():
     with sqlite3.connect(app.config["DB_PATH"]) as conn:
         conn.execute("PRAGMA journal_mode=WAL;")
@@ -152,33 +158,63 @@ def with_retry(fn, *args, **kwargs):
 
 init_db()
 
-# ==============================================================
-# TEXT UTILITIES
-# ==============================================================
+# ============================================================== #
+# TEXT & PREDICTION UTILITIES
+# ============================================================== #
 def tokenize_text(text: str) -> str:
     text = re.sub(r"http\S+|www\S+|https\S+", "", text)
-    text = re.sub(r"[^a-zA-Z\s]", "", text)
+    text = re.sub(r"[^a-zA-Z\s]", " ", text)  # Malay uses Latin script; OK
     return text.lower().strip()
 
+def detect_lang(text: str) -> str:
+    try:
+        code = detect(text)
+        return "ms" if code == "ms" else "en"
+    except LangDetectException:
+        return "en"
+
 @lru_cache(maxsize=512)
-def cached_prediction(clean_text_hash: str, original_text: str):
-    model, vectorizer = load_model()
-    features = vectorizer.transform([tokenize_text(original_text)])
+def _cached_predict(lang: str, clean_text_hash: str, original_text: str):
+    """
+    Language-aware cached prediction. Uses the right model/vectorizer.
+    Falls back to EN if MY model is missing.
+    """
+    # Ensure model is loaded
+    load_models_if_needed(lang)
+
+    # Choose pair
+    if lang == "ms" and _my_model and _my_vectorizer:
+        model, vec = _my_model, _my_vectorizer
+        model_used = "malay"
+    else:
+        model, vec = _en_model, _en_vectorizer
+        model_used = "english"
+
+    features = vec.transform([original_text])
     pred = model.predict(features)[0]
     if hasattr(model, "predict_proba"):
         probs = model.predict_proba(features)[0]
         conf = float(max(probs))
         class_probs = {"0": float(probs[0]), "1": float(probs[1])}
     else:
-        conf = 0.5
-        class_probs = {"0": 0.5, "1": 0.5}
-    return {"prediction": str(pred), "confidence": conf, "class_probs": class_probs}
+        # Approx confidence if no proba
+        if hasattr(model, "decision_function"):
+            df = model.decision_function(features)
+            conf = float(1 / (1 + math.exp(-abs(df[0]))))
+        else:
+            conf = 0.5
+        class_probs = {"0": 1 - conf, "1": conf}
+
+    return {"prediction": str(pred), "confidence": conf, "class_probs": class_probs, "model_used": model_used}
 
 def predict_fake_news(text: str) -> dict:
     if not text.strip():
         return {"error": "Empty text"}
+    lang = detect_lang(text)
     text_hash = hashlib.sha256(tokenize_text(text).encode()).hexdigest()
-    return cached_prediction(text_hash, text)
+    out = _cached_predict(lang, text_hash, text)
+    out["language"] = "Malay" if lang == "ms" else "English"
+    return out, (lang == "ms" and _my_model and _my_vectorizer)
 
 def analyze_text_heuristics(text: str) -> dict:
     blob = TextBlob(text)
@@ -194,119 +230,95 @@ def analyze_text_heuristics(text: str) -> dict:
         "fake_score": fake_score
     }
 
-# ==============================================================
-# PERFORMANCE BOOST — Cached Domain Trustability
-# ==============================================================
-@lru_cache(maxsize=200)
+# ============================================================== #
+# TRUSTABILITY (Cached) — includes Malaysia-aware categories
+# ============================================================== #
+@lru_cache(maxsize=400)
 def compute_trustability(url: str) -> dict:
     domain = tldextract.extract(url).registered_domain or "unknown"
-    trusted = [
-    # --- International Mainstream Media ---
-    "bbc.com", "reuters.com", "apnews.com", "associatedpress.com",
-    "nytimes.com", "theguardian.com", "cnn.com", "npr.org",
-    "bloomberg.com", "washingtonpost.com", "aljazeera.com",
-    "forbes.com", "cnbc.com", "dw.com", "theatlantic.com",
-    "axios.com", "politico.com", "time.com", "economist.com",
-    "usatoday.com", "abcnews.go.com", "nbcnews.com", "cbsnews.com",
 
-    # --- Fact-checking and Verification Organizations ---
-    "snopes.com", "factcheck.org", "politifact.com", "afp.com",
-    "fullfact.org", "africacheck.org", "poynter.org", "boomlive.in",
-    "maldita.es", "verafiles.org", "truthorfiction.com",
-    "leadstories.com", "checkyourfact.com", "euvsdisinfo.eu",
-
-    # --- Science, Research & Tech News ---
-    "nature.com", "sciencedaily.com", "scientificamerican.com",
-    "nationalgeographic.com", "newscientist.com", "space.com",
-    "theconversation.com", "arstechnica.com", "techcrunch.com",
-    "wired.com", "engadget.com",
-
-    # --- Financial / Economic Outlets ---
-    "wsj.com", "ft.com", "investopedia.com", "marketwatch.com",
-    "morningstar.com", "businessinsider.com",
-
-    # --- Asia-Pacific / Regional Trusted News ---
-    "straitstimes.com", "channelnewsasia.com", "themalaysianreserve.com",
-    "thestar.com.my", "malaymail.com", "bernama.com", "nikkei.com",
-    "japantimes.co.jp", "scmp.com", "abc.net.au", "sbs.com.au",
-
-    # --- European Trusted Outlets ---
-    "lemonde.fr", "euronews.com", "bbc.co.uk", "guardian.co.uk",
-    "spiegel.de", "tagesschau.de", "repubblica.it", "elpais.com",
-
-    # --- African & Middle East Trusted Outlets ---
-    "enca.com", "news24.com", "bbcafrica.com", "theafricareport.com",
-    "arabnews.com", "thenationalnews.com",
-
-    # --- Latin American Trusted Outlets ---
-    "bbc.com/mundo", "clarin.com", "folha.uol.com.br", "elpais.com",
-    "lanacion.com.ar", "g1.globo.com"
-]
-    
+    trusted_global = [
+        "bbc.com","reuters.com","apnews.com","associatedpress.com","nytimes.com","theguardian.com",
+        "cnn.com","npr.org","bloomberg.com","washingtonpost.com","aljazeera.com","forbes.com",
+        "cnbc.com","dw.com","theatlantic.com","axios.com","politico.com","time.com","economist.com",
+        "usatoday.com","abcnews.go.com","nbcnews.com","cbsnews.com","wsj.com","ft.com",
+        "investopedia.com","marketwatch.com","morningstar.com","businessinsider.com",
+        "nature.com","sciencedaily.com","scientificamerican.com","nationalgeographic.com",
+        "newscientist.com","space.com","theconversation.com","arstechnica.com","techcrunch.com",
+        "wired.com","engadget.com","euronews.com","bbc.co.uk","guardian.co.uk","spiegel.de",
+        "tagesschau.de","repubblica.it","elpais.com","lemonde.fr","scmp.com","nikkei.com",
+        "abc.net.au","sbs.com.au","enca.com","news24.com","bbcafrica.com","theafricareport.com",
+        "arabnews.com","thenationalnews.com","clarin.com","folha.uol.com.br","lanacion.com.ar","g1.globo.com"
+    ]
+    trusted_my = [
+        "thestar.com.my","malaymail.com","bernama.com","astroawani.com",
+        "themalaysianreserve.com","freemalaysiatoday.com","theborneopost.com","theedgemalaysia.com"
+    ]
     suspicious = [
-    "clickbait", "rumor", "gossip", ".buzz", ".click",
-    "wordpress", "blogspot", "viralnews", "trendingnow",
-    "celebrityleak", "beforeitsnews.com", "thegatewaypundit.com",
-    "infowars.com", "naturalnews.com", "breitbart.com",
-    "sputniknews.com", "rt.com", "zerohedge.com",
-    "theblaze.com", "dailycaller.com", "theepochtimes.com"
-]
+        "clickbait","rumor","gossip",".buzz",".click","wordpress","blogspot",
+        "viralnews","trendingnow","celebrityleak","beforeitsnews.com","thegatewaypundit.com",
+        "infowars.com","naturalnews.com","breitbart.com","sputniknews.com","rt.com",
+        "zerohedge.com","theblaze.com","dailycaller.com","theepochtimes.com"
+    ]
 
-    if any(t in domain for t in trusted):
+    if any(t in domain for t in trusted_my):
+        return {"domain": domain, "trust_score": 90, "category": "Trusted (Malaysia)"}
+    if any(t in domain for t in trusted_global):
         return {"domain": domain, "trust_score": 90, "category": "Trusted"}
-    elif any(s in domain for s in suspicious):
+    if any(s in domain for s in suspicious):
         return {"domain": domain, "trust_score": 30, "category": "Suspicious"}
-    else:
-        return {"domain": domain, "trust_score": 50, "category": "Uncertain"}
+    if ".my" in domain:
+        return {"domain": domain, "trust_score": 60, "category": "Unverified Malaysian Source"}
+    return {"domain": domain, "trust_score": 50, "category": "Uncertain"}
 
-# ==============================================================
+# ============================================================== #
 # JWT & RESPONSE HELPERS
-# ==============================================================
+# ============================================================== #
 def verify_jwt(token: str):
     try:
         decoded = jwt.decode(token, app.config["JWT_SECRET"], algorithms=["HS256"])
         return decoded.get("username")
-    except jwt.ExpiredSignatureError:
-        return None
-    except jwt.InvalidTokenError:
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
         return None
 
 def safe_json(data):
     return jsonify(json.loads(json.dumps(data, default=str)))
 
-# ==============================================================
-# EXPLAINABILITY ENGINE
-# ==============================================================
-FAKE_KEYWORDS = {"shocking", "exclusive", "miracle", "hoax", "exposed", "click here", "secret"}
-REAL_KEYWORDS = {"official", "research", "confirmed", "report", "sources", "data", "analysis"}
+# ============================================================== #
+# EXPLAINABILITY (uses the ACTIVE model/vectorizer)
+# ============================================================== #
+FAKE_KEYWORDS = {"shocking","exclusive","miracle","hoax","exposed","click here","secret","scam","rumor"}
+REAL_KEYWORDS = {"official","research","confirmed","report","sources","data","analysis","statement","evidence"}
 
 def keyword_hits(line):
     l = line.lower()
     return [w for w in FAKE_KEYWORDS if w in l], [w for w in REAL_KEYWORDS if w in l]
 
-def tfidf_line_score(line):
-    if _model is None:
-        load_model()
+def tfidf_line_score(line, model, vectorizer, coef_vector):
+    if model is None or vectorizer is None or coef_vector is None:
+        return 0.0
     score = 0.0
-    if hasattr(_vectorizer, "vocabulary_") and hasattr(_model, "coef_"):
+    if hasattr(vectorizer, "vocabulary_"):
         for word in tokenize_text(line).split():
-            idx = _vectorizer.vocabulary_.get(word)
-            if idx is not None and idx < len(_model.coef_[0]):
-                score += float(_model.coef_[0][idx])
+            idx = vectorizer.vocabulary_.get(word)
+            if idx is not None and idx < len(coef_vector):
+                score += float(coef_vector[idx])
     return score
 
 def line_heuristic_score(line):
     s = TextBlob(line).sentiment.polarity
     excls = line.count("!")
-    upper_ratio = sum(1 for w in line.split() if w.isupper()) / max(1, len(line.split()))
+    words = line.split()
+    upper_ratio = sum(1 for w in words if w.isupper()) / max(1, len(words))
     return 0.5 * (1 - abs(s)) + 0.3 * upper_ratio + 0.2 * min(excls / 3, 1)
 
-def explain_text(text, trust, final_pred):
+def explain_text(text, trust, final_pred, model, vectorizer, coef_vector):
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     highlighted, reasons = [], []
     reasons.append(f"Domain '{trust['domain']}' marked as {trust['category']}.")
+
     for line in lines:
-        w_tfidf = tfidf_line_score(line)
+        w_tfidf = tfidf_line_score(line, model, vectorizer, coef_vector)
         fp = line_heuristic_score(line)
         w_heur = (0.5 - fp)
         fake_hits, real_hits = keyword_hits(line)
@@ -314,20 +326,26 @@ def explain_text(text, trust, final_pred):
         if fake_hits: kw_signal -= 0.3 * len(fake_hits)
         if real_hits: kw_signal += 0.2 * len(real_hits)
         total = w_tfidf + w_heur + kw_signal
+
         tags = []
         if fake_hits: tags.append(f"Fake cues: {', '.join(fake_hits)}")
         if real_hits: tags.append(f"Real cues: {', '.join(real_hits)}")
         if abs(w_tfidf) > 0.2: tags.append("Model-weighted term influence")
+
         highlighted.append({"text": line, "weight": total, "tags": tags})
+
     if final_pred == "Fake":
         reasons.append("Model detected sensational or biased tone.")
     elif final_pred == "Real":
         reasons.append("Model detected balanced and factual language.")
+
+    # sort strongest contributors first (optional UI)
+    highlighted.sort(key=lambda d: abs(d["weight"]), reverse=True)
     return highlighted, reasons
 
-# ==============================================================
+# ============================================================== #
 # ROUTES
-# ==============================================================
+# ============================================================== #
 @app.route("/health")
 def health():
     return "OK", 200
@@ -337,34 +355,42 @@ def home():
     return jsonify({"message": "Fake News Detector 101 API ✅"})
 
 @app.route("/predict", methods=["POST"])
-@limiter.limit("10 per minute")  # 10 predictions per minute per IP
+@limiter.limit("10 per minute")
 def predict():
-    """Main prediction route with error handling."""
     try:
         token = request.headers.get("Authorization", "").replace("Bearer ", "")
         username = verify_jwt(token)
         data = request.get_json() or {}
-        text, headline, url = data.get("text", ""), data.get("headline", ""), data.get("url", "")
+
+        text = data.get("text", "")
+        headline = data.get("headline", "")
+        url = data.get("url", "")
         if not text:
             return jsonify({"error": "Missing text"}), 400
 
-        ml = predict_fake_news(text)
-        if "error" in ml:
-            raise ValueError(ml["error"])
+        # Predict (language-aware)
+        ml, used_malay = predict_fake_news(text)
+        final_label = "Fake" if ml["prediction"] == "0" else "Real"
+
+        # Pick the active model/vectorizer for explainability
+        if used_malay and _my_model and _my_vectorizer:
+            model, vectorizer, coef = _my_model, _my_vectorizer, _my_coef
+        else:
+            model, vectorizer, coef = _en_model, _en_vectorizer, _en_coef
 
         heur = analyze_text_heuristics(text)
         trust = compute_trustability(url)
-        final_label = "Fake" if ml["prediction"] == "0" else "Real"
-        lines, reasons = explain_text(text, trust, final_label)
+        lines, reasons = explain_text(text, trust, final_label, model, vectorizer, coef)
 
-        # Save history (if logged in)
+        # Save (if logged-in)
         if username:
             def _save():
                 with get_db_connection() as conn:
                     conn.execute("""
                         INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (username, headline, url, text, ml["prediction"], ml["confidence"], json.dumps(heur), json.dumps(trust)))
+                    """, (username, headline, url, text, ml["prediction"], ml["confidence"],
+                          json.dumps(heur), json.dumps(trust)))
                     conn.commit()
             with_retry(_save)
 
@@ -372,6 +398,8 @@ def predict():
             "username": username or "Guest",
             "headline": headline,
             "url": url,
+            "language": ml["language"],
+            "model_used": ml["model_used"],  # 'english' or 'malay'
             "prediction": final_label,
             "confidence": ml["confidence"],
             "class_probs": ml["class_probs"],
@@ -381,12 +409,12 @@ def predict():
         })
 
     except Exception as e:
-        logging.error(f"❌ Prediction failed: {e}")
+        logging.exception(f"❌ Prediction failed")
         return jsonify({"error": "Model prediction failed. Please try again later."}), 500
 
-# ==============================================================
+# ============================================================== #
 # MAIN
-# ==============================================================
+# ============================================================== #
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     logging.info(f"🚀 Running locally on http://0.0.0.0:{port}")
