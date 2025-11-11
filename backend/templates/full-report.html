@@ -106,34 +106,51 @@
       font-size: 20px;
     }
 
-    /* Verdict Card */
-    .verdict-card {
-      text-align: center;
-      padding: 36px 24px;
-      background: linear-gradient(180deg, #f8fbff, #edf3ff);
-      box-shadow: 0 3px 14px rgba(25, 118, 210, 0.12);
-      border-radius: 18px;
-      position: relative;
-      overflow: hidden;
-    }
+    /* --- Professional Clean Verdict Card --- */
+.verdict-card {
+  background: #ffffff;
+  border: 1px solid #e3e8f0;
+  border-radius: 12px;
+  padding: 28px 20px;
+  text-align: center;
+  margin-bottom: 35px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  transition: transform 0.2s ease, box-shadow 0.3s ease;
+}
 
-    .verdict-text {
-      font-family: "Poppins", sans-serif;
-      font-size: 26px;
-      font-weight: 700;
-      margin: 8px 0;
-    }
+.verdict-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
 
-    .verdict-sub {
-      font-size: 15px;
-      color: var(--muted);
-      max-width: 600px;
-      margin: 0 auto;
-    }
+.verdict-icon {
+  font-size: 34px;
+  margin-bottom: 6px;
+}
 
-    .verdict-text.real { color: var(--green); }
-    .verdict-text.fake { color: var(--red); }
-    .verdict-text.uncertain { color: var(--yellow); }
+.verdict-title {
+  font-family: "Poppins", sans-serif;
+  font-weight: 700;
+  font-size: 20px;
+  margin-bottom: 6px;
+}
+
+.verdict-desc {
+  color: #606775;
+  font-size: 15px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Color states */
+.verdict-title.fake,
+.verdict-icon.fake { color: #e53935; }
+
+.verdict-title.real,
+.verdict-icon.real { color: #2e7d32; }
+
+.verdict-title.uncertain,
+.verdict-icon.uncertain { color: #f9a825; }
 
     /* Key/Value Info */
     .keyval {
@@ -278,21 +295,25 @@
   </header>
 
   <main>
-    <div class="card verdict-card">
-      {% if 'Fake' in row[4] %}
-        <div class="verdict-text fake">🚨 Fake News Detected</div>
-        <div class="verdict-sub">This article shows strong signs of misinformation or unreliable claims.</div>
-      {% elif 'Likely' in row[4] %}
-        <div class="verdict-text uncertain">🟡 Likely Real</div>
-        <div class="verdict-sub">Appears factual but with minor inconsistencies or bias detected.</div>
-      {% elif 'Uncertain' in row[4] %}
-        <div class="verdict-text uncertain">⚠️ Uncertain Reliability</div>
-        <div class="verdict-sub">Mixed indicators found — verify using additional sources.</div>
-      {% else %}
-        <div class="verdict-text real">✅ Trusted Article</div>
-        <div class="verdict-sub">This content aligns with credible and factual writing.</div>
-      {% endif %}
-    </div>
+    <div class="verdict-card">
+  {% if 'Fake' in row[4] %}
+    <div class="verdict-icon fake">🚨</div>
+    <div class="verdict-title fake">Fake News Detected</div>
+    <p class="verdict-desc">This article shows strong signs of misinformation or unreliable claims.</p>
+  {% elif 'Likely' in row[4] %}
+    <div class="verdict-icon uncertain">🟡</div>
+    <div class="verdict-title uncertain">Likely Real</div>
+    <p class="verdict-desc">Appears factual but with minor inconsistencies or bias detected.</p>
+  {% elif 'Uncertain' in row[4] %}
+    <div class="verdict-icon uncertain">⚠️</div>
+    <div class="verdict-title uncertain">Uncertain Reliability</div>
+    <p class="verdict-desc">Mixed indicators found — verify using additional sources.</p>
+  {% else %}
+    <div class="verdict-icon real">✅</div>
+    <div class="verdict-title real">Trusted Article</div>
+    <p class="verdict-desc">This content aligns with credible and factual reporting.</p>
+  {% endif %}
+</div>
 
     <div class="card">
       <h2><span>📋</span> Scan Summary</h2>
