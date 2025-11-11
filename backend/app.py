@@ -336,65 +336,107 @@ def login():
                        app.config["JWT_SECRET"], algorithm="HS256")
     return jsonify({"token": token, "username": username})
 
-# --- PREDICT (FIXED VERSION) ---
+# --- PREDICT (CONSISTENT VERSION) ---
 @app.route("/predict", methods=["POST"])
 @limiter.limit(PREDICT_LIMIT)
 def predict():
     try:
+        # ==============================================================
+        # 🔑 AUTH CHECK
+        # ==============================================================
         token = request.headers.get("Authorization", "").replace("Bearer ", "")
         username = verify_jwt(token)
+
+        # ==============================================================
+        # 📥 INPUT VALIDATION
+        # ==============================================================
         data = request.get_json() or {}
-        text, headline, url = data.get("text", ""), data.get("headline", ""), data.get("url", "")
+        text = data.get("text", "").strip()
+        headline = data.get("headline", "").strip()
+        url = data.get("url", "").strip()
+
         if not text:
             return jsonify({"error": "Missing text"}), 400
 
+        # ==============================================================
+        # 🧠 MODEL PREDICTION
+        # ==============================================================
         ml, _ = predict_fake_news(text)
-        ml = dict(ml)  # make a safe copy (avoid mutation of cached result)
-        final_label = "Fake" if ml["prediction"] == "0" else "Real"
+        ml = dict(ml)  # make a safe copy (avoid mutation)
+        base_label = "Fake" if ml["prediction"] == "0" else "Real"
+
+        # ==============================================================
+        # ⚙️ HEURISTICS + TRUST
+        # ==============================================================
         heur = analyze_text_heuristics(text)
         trust = compute_trustability(url)
 
-        # Malaysia trust correction (display-only)
+        # ==============================================================
+        # 🎚️ MALAY TRUST CORRECTION
+        # ==============================================================
         corrected_conf = ml["confidence"]
-        if trust["category"].startswith("Trusted (Malaysia)") and final_label == "Fake":
+        final_label = base_label
+
+        if trust["category"].startswith("Trusted (Malaysia)") and base_label == "Fake":
             corrected_conf *= 0.6
             final_label = "Likely Real"
 
+        # ==============================================================
+        # 🧩 EXPLAINABILITY
+        # ==============================================================
         lines, reasons = explain_text(text, trust, final_label, ml["model_used"])
 
+        # ==============================================================
+        # 💾 SAVE HISTORY (store corrected values)
+        # ==============================================================
         if username:
             with get_db_connection() as conn:
                 conn.execute("""
                     INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (username, headline, url, text, ml["prediction"], ml["confidence"],
-                      json.dumps(heur), json.dumps(trust)))
+                """, (
+                    username,
+                    headline,
+                    url,
+                    text,
+                    final_label,          # ✅ Store corrected label
+                    corrected_conf,       # ✅ Store corrected confidence
+                    json.dumps(heur),
+                    json.dumps(trust)
+                ))
                 conn.commit()
 
+        # ==============================================================
+        # 📤 RETURN JSON RESPONSE
+        # ==============================================================
         return safe_json({
+            "version": "2025.11-FINAL",
             "username": username or "Guest",
             "headline": headline,
             "url": url,
             "language": ml["language"],
             "model_used": ml["model_used"],
-            "prediction": final_label,
-            "confidence": corrected_conf,
+            "prediction": final_label,           # ✅ Consistent label
+            "confidence": corrected_conf,        # ✅ Consistent confidence
+            "raw_prediction": base_label,        # 🧠 Optional (for debugging)
             "class_probs": ml["class_probs"],
             "heuristics": heur,
             "trustability": trust,
             "explain": {"lines": lines, "reasons": reasons}
         })
+
     except Exception as e:
         logging.exception("Prediction error")
         return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
 
-# --- HISTORY ---
+# --- HISTORY (Consistent with Frontend & Popup) ---
 @app.route("/get-history")
 def get_history():
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
     username = verify_jwt(token)
     if not username:
         return jsonify({"error": "Unauthorized"}), 401
+
     with get_db_connection() as conn:
         cur = conn.cursor()
         cur.execute("""
@@ -402,14 +444,31 @@ def get_history():
             FROM scans WHERE username=? ORDER BY timestamp DESC
         """, (username,))
         rows = cur.fetchall()
-    history = [{
-        "id": r[0], "headline": r[1], "url": r[2],
-        "prediction": "Fake" if r[3] == "0" else "Real",
-        "confidence": r[4],
-        "heuristics": json.loads(r[5]),
-        "trustability": json.loads(r[6]),
-        "timestamp": r[7]
-    } for r in rows]
+
+    history = []
+    for r in rows:
+        raw_pred = str(r[3]).strip().lower()
+        # ✅ Normalize prediction text from database
+        if raw_pred in ("0", "fake"):
+            pred_label = "Fake"
+        elif "likely" in raw_pred:
+            pred_label = "Likely Real"
+        elif "real" in raw_pred:
+            pred_label = "Real"
+        else:
+            pred_label = "Uncertain"
+
+        history.append({
+            "id": r[0],
+            "headline": r[1] or "—",
+            "url": r[2] or "—",
+            "prediction": pred_label,     # ✅ Correct, readable prediction
+            "confidence": float(r[4]) if r[4] is not None else None,
+            "heuristics": json.loads(r[5]) if r[5] else {},
+            "trustability": json.loads(r[6]) if r[6] else {},
+            "timestamp": r[7]
+        })
+
     return jsonify({"history": history})
 
 # --- REPORT ---
