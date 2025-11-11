@@ -329,7 +329,7 @@
         <div>Trust Score:</div> <div><b>{{ trust.trust_score }}</b></div>
         <div>Category:</div> 
         <div>
-          <span class="{% if trust.category == 'Trusted' %}real{% elif trust.category == 'Suspicious' %}fake{% else %}uncertain{% endif %}">
+          <span class="{% if trust.category == 'Trusted' or trust.category == 'Trusted (Malaysia)' %}real{% elif trust.category == 'Suspicious' %}fake{% else %}uncertain{% endif %}">
             {{ trust.category }}
           </span>
         </div>
