@@ -1,6 +1,6 @@
 # ==============================================================
 #  Fake News Detector 101 — Optimized Explainable AI API
-#  Version: Render-Ready (2025)
+#  Version: Render-Ready (2025.11 FINAL)
 #  Features: Dual EN/MY Models + Auth + History + Reports + Explainability
 # ==============================================================
 
@@ -50,10 +50,10 @@ logging.basicConfig(
 )
 
 # ============================================================== #
-# RATE LIMITING (20 per minute per user)
+# RATE LIMITING (20 requests per 20 minutes per user/IP)
 # ============================================================== #
 def get_user_or_ip():
-    """Limit logged-in users by username, guests by IP address."""
+    """Limit logged-in users by username; guests by IP."""
     token = request.headers.get("Authorization", "").replace("Bearer ", "")
     try:
         username = jwt.decode(token, app.config["JWT_SECRET"], algorithms=["HS256"]).get("username")
@@ -61,11 +61,12 @@ def get_user_or_ip():
         username = None
     return username or request.remote_addr
 
-limiter = Limiter(get_user_or_ip, app=app, default_limits=["100 per minute"])
-logging.info("🛡️ Rate limiting: 20 predictions/min per user, 100 requests/min globally")
+limiter = Limiter(get_user_or_ip, app=app, default_limits=["100 per 20 minutes"])
+PREDICT_LIMIT = "20 per 20 minutes"
+logging.info("🛡️ Rate limiting: 20 predictions/20min per user, 100 req/20min global")
 
 # ============================================================== #
-# MODELS (Lazy Load)
+# MODELS (Lazy Load + Background warmup for EN)
 # ============================================================== #
 _en_model = _en_vectorizer = _en_coef = None
 _my_model = _my_vectorizer = _my_coef = None
@@ -85,19 +86,24 @@ def load_models_if_needed(lang: str):
             if _en_model is None or _en_vectorizer is None:
                 t0 = time.time()
                 _en_model, _en_vectorizer, _en_coef = _load_pair(MODEL_PATH_EN, VECTORIZER_PATH_EN)
-                logging.info(f"✅ EN model loaded in {time.time()-t0:.2f}s")
+                logging.info(f"✅ English model loaded in {time.time()-t0:.2f}s")
         else:
             if _my_model is None or _my_vectorizer is None:
                 if not (os.path.exists(MODEL_PATH_MY) and os.path.exists(VECTORIZER_PATH_MY)):
-                    logging.warning("⚠️ Malay model/vectorizer missing — fallback to EN.")
+                    logging.warning("⚠️ Malay model/vectorizer missing — fallback to English.")
                     return
                 t0 = time.time()
                 _my_model, _my_vectorizer, _my_coef = _load_pair(MODEL_PATH_MY, VECTORIZER_PATH_MY)
-                logging.info(f"✅ MY model loaded in {time.time()-t0:.2f}s")
+                logging.info(f"✅ Malay model loaded in {time.time()-t0:.2f}s")
 
-def preload_model_async():
-    threading.Thread(target=lambda: load_models_if_needed("en"), daemon=True).start()
-preload_model_async()
+def _preload_en():
+    try:
+        load_models_if_needed("en")
+        logging.info("🚀 Background preload: EN model ready.")
+    except Exception as e:
+        logging.error(f"Preload failed: {e}")
+
+threading.Thread(target=_preload_en, daemon=True).start()
 
 # ============================================================== #
 # DATABASE (SQLite WAL)
@@ -146,8 +152,11 @@ def tokenize_text(text: str) -> str:
     return text.lower().strip()
 
 def detect_lang(text: str) -> str:
+    """Bilingual detection with Malay keywords fallback."""
     try:
         code = detect(text)
+        if any(w in text.lower() for w in ["kerajaan","rakyat","berita","politik","bantuan","negara","negeri","parlimen","menteri"]):
+            return "ms"
         return "ms" if code == "ms" else "en"
     except LangDetectException:
         return "en"
@@ -164,15 +173,13 @@ def _cached_predict(lang: str, clean_text_hash: str, original_text: str):
     pred = model.predict(features)[0]
     if hasattr(model, "predict_proba"):
         probs = model.predict_proba(features)[0]
-        conf = float(max(probs))
-        class_probs = {"0": float(probs[0]), "1": float(probs[1])}
     else:
-        conf, class_probs = 0.5, {"0": 0.5, "1": 0.5}
-
+        probs = [0.5, 0.5]
+    conf = float(max(probs))
     return {
         "prediction": str(pred),
         "confidence": conf,
-        "class_probs": class_probs,
+        "class_probs": {"0": float(probs[0]), "1": float(probs[1])},
         "model_used": used,
         "coef_vector": coef
     }
@@ -182,9 +189,9 @@ def predict_fake_news(text: str):
         return {"error": "Empty text"}
     lang = detect_lang(text)
     text_hash = hashlib.sha256(tokenize_text(text).encode()).hexdigest()
-    result = _cached_predict(lang, text_hash, text)
-    result["language"] = "Malay" if lang == "ms" else "English"
-    return result, (lang == "ms" and _my_model and _my_vectorizer)
+    res = _cached_predict(lang, text_hash, text)
+    res["language"] = "Malay" if lang == "ms" else "English"
+    return res, (lang == "ms" and _my_model and _my_vectorizer)
 
 def analyze_text_heuristics(text: str) -> dict:
     blob = TextBlob(text)
@@ -196,14 +203,18 @@ def analyze_text_heuristics(text: str) -> dict:
     return {"sentiment": sentiment, "uppercase_ratio": upper_ratio, "exclamations": exclamations, "fake_score": fake_score}
 
 # ============================================================== #
-# TRUSTABILITY (Cached)
+# TRUSTABILITY (Cached) — includes Malaysia sources
 # ============================================================== #
 @lru_cache(maxsize=400)
 def compute_trustability(url: str) -> dict:
     domain = tldextract.extract(url).registered_domain or "unknown"
-    trusted_my = ["thestar.com.my","malaymail.com","bernama.com","astroawani.com","freemalaysiatoday.com"]
-    trusted_global = ["bbc.com","reuters.com","cnn.com","nytimes.com","bloomberg.com"]
+    trusted_my = [
+        "thestar.com.my","malaymail.com","bernama.com","astroawani.com",
+        "freemalaysiatoday.com","theedgemalaysia.com","theborneopost.com","themalaysianreserve.com"
+    ]
+    trusted_global = ["bbc.com","reuters.com","cnn.com","nytimes.com","bloomberg.com","apnews.com"]
     suspicious = ["clickbait","rumor","wordpress","blogspot","infowars.com","breitbart.com"]
+
     if any(t in domain for t in trusted_my):
         return {"domain": domain, "trust_score": 90, "category": "Trusted (Malaysia)"}
     if any(t in domain for t in trusted_global):
@@ -245,11 +256,9 @@ def _line_heuristics(line: str):
 def explain_text(text: str, trust: dict, final_pred: str, model_used: str):
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     highlighted, reasons = [], []
-    if model_used.lower() == "malay" and _my_vectorizer is not None:
-        vec, coef = _my_vectorizer, _my_coef
-    else:
-        vec, coef = _en_vectorizer, _en_coef
+    vec, coef = (_my_vectorizer, _my_coef) if model_used.lower() == "malay" and _my_vectorizer else (_en_vectorizer, _en_coef)
     reasons.append(f"Domain '{trust.get('domain')}' categorized as {trust.get('category')}.")
+
     for ln in lines:
         w_tfidf = _tfidf_line_score(ln, vec, coef)
         w_heur = _line_heuristics(ln)
@@ -261,8 +270,12 @@ def explain_text(text: str, trust: dict, final_pred: str, model_used: str):
         if r_hits: tags.append(f"Real cues: {', '.join(r_hits)}")
         if abs(w_tfidf) > 0.2: tags.append("Model-weighted term influence")
         highlighted.append({"text": ln, "weight": total, "tags": tags})
+
     highlighted.sort(key=lambda d: abs(d["weight"]), reverse=True)
-    reasons.append("Model detected sensational/biased tone." if final_pred == "Fake" else "Model detected factual language.")
+    if final_pred == "Fake":
+        reasons.append("Model detected sensational/biased tone.")
+    else:
+        reasons.append("Model detected balanced/factual language.")
     return highlighted[:50], reasons
 
 # ============================================================== #
@@ -316,18 +329,21 @@ def login():
         row = cur.fetchone()
     if not row or not check_password_hash(row[0], password):
         return jsonify({"error": "Invalid credentials"}), 401
-    token = jwt.encode({"username": username, "exp": datetime.utcnow() + timedelta(hours=3)}, app.config["JWT_SECRET"], algorithm="HS256")
+    token = jwt.encode({"username": username, "exp": datetime.utcnow() + timedelta(hours=3)},
+                       app.config["JWT_SECRET"], algorithm="HS256")
     return jsonify({"token": token, "username": username})
 
 # --- PREDICT ---
 @app.route("/predict", methods=["POST"])
-@limiter.limit("20 per minute")
+@limiter.limit(PREDICT_LIMIT)
 def predict():
     try:
         token = request.headers.get("Authorization", "").replace("Bearer ", "")
         username = verify_jwt(token)
         data = request.get_json() or {}
-        text, headline, url = data.get("text", ""), data.get("headline", ""), data.get("url", "")
+        text = data.get("text", "")
+        headline = data.get("headline", "")
+        url = data.get("url", "")
         if not text:
             return jsonify({"error": "Missing text"}), 400
 
@@ -335,6 +351,14 @@ def predict():
         final_label = "Fake" if ml["prediction"] == "0" else "Real"
         heur = analyze_text_heuristics(text)
         trust = compute_trustability(url)
+
+        # Malaysia trust correction (reduce false "Fake" on mainstream .my)
+        if trust["category"].startswith("Trusted (Malaysia)") and final_label == "Fake":
+            ml["confidence"] *= 0.6
+            # Keep label "Fake" but confidence lowered OR mark as "Likely Real"
+            # Choose one policy:
+            final_label = "Likely Real"
+
         lines, reasons = explain_text(text, trust, final_label, ml["model_used"])
 
         if username:
@@ -342,7 +366,8 @@ def predict():
                 conn.execute("""
                     INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, (username, headline, url, text, ml["prediction"], ml["confidence"], json.dumps(heur), json.dumps(trust)))
+                """, (username, headline, url, text, ml["prediction"], ml["confidence"],
+                      json.dumps(heur), json.dumps(trust)))
                 conn.commit()
 
         return safe_json({
@@ -358,9 +383,9 @@ def predict():
             "trustability": trust,
             "explain": {"lines": lines, "reasons": reasons}
         })
-    except Exception:
+    except Exception as e:
         logging.exception("Prediction error")
-        return jsonify({"error": "Prediction failed"}), 500
+        return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
 
 # --- HISTORY ---
 @app.route("/get-history")
@@ -371,7 +396,10 @@ def get_history():
         return jsonify({"error": "Unauthorized"}), 401
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, headline, url, prediction, confidence, heuristics, trustability, timestamp FROM scans WHERE username=? ORDER BY timestamp DESC", (username,))
+        cur.execute("""
+            SELECT id, headline, url, prediction, confidence, heuristics, trustability, timestamp
+            FROM scans WHERE username=? ORDER BY timestamp DESC
+        """, (username,))
         rows = cur.fetchall()
     history = [{
         "id": r[0], "headline": r[1], "url": r[2],
@@ -390,22 +418,36 @@ def get_report(scan_id):
     username = verify_jwt(token)
     if not username:
         return "<h3>Unauthorized</h3>", 401
+
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("""SELECT id, headline, url, text, prediction, confidence, heuristics, trustability, timestamp
-                       FROM scans WHERE id=? AND username=?""", (scan_id, username))
+        cur.execute("""
+            SELECT id, headline, url, text, prediction, confidence, heuristics, trustability, timestamp
+            FROM scans WHERE id=? AND username=?
+        """, (scan_id, username))
         row = cur.fetchone()
     if not row:
         return "<h3>Report not found.</h3>", 404
-    heur, trust = json.loads(row[6]), json.loads(row[7])
+
+    heur = json.loads(row[6])
+    trust = json.loads(row[7])
     label = "Fake" if row[4] == "0" else "Real"
+
+    # Recompute explainability so report always has evidence
     lang = detect_lang(row[3] or "")
     load_models_if_needed("ms" if lang == "ms" else "en")
     model_used = "Malay" if (lang == "ms" and _my_model and _my_vectorizer) else "English"
     highlighted_lines, explain_reasons = explain_text(row[3] or "", trust, label, model_used)
-    return render_template("full-report.html", row=row, heur=heur, trust=trust,
-                           username=username, highlighted_lines=highlighted_lines,
-                           explain_reasons=explain_reasons)
+
+    return render_template(
+        "full-report.html",
+        row=row,
+        heur=heur,
+        trust=trust,
+        username=username,
+        highlighted_lines=highlighted_lines,
+        explain_reasons=explain_reasons,
+    )
 
 # ============================================================== #
 # MAIN
