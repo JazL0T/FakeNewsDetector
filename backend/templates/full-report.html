@@ -13,10 +13,10 @@
       --green: #2e7d32;
       --red: #e53935;
       --yellow: #f9a825;
-      --bg: #f7faff;
-      --text: #1c2430;
+      --bg: #f4f7fb;
+      --text: #1a1f2c;
       --muted: #6b7686;
-      --radius: 14px;
+      --radius: 16px;
     }
 
     * { box-sizing: border-box; }
@@ -24,9 +24,8 @@
     body {
       margin: 0;
       font-family: "Inter", sans-serif;
-      background: linear-gradient(145deg, #f2f6ff, #ffffff);
+      background: radial-gradient(circle at top left, #eef3ff, #ffffff);
       color: var(--text);
-      letter-spacing: 0.2px;
     }
 
     header {
@@ -36,22 +35,21 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
     }
 
     .logo-title {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 12px;
     }
 
     .logo {
-      width: 40px;
-      height: 40px;
-      border-radius: 8px;
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
       background: white;
       padding: 3px;
-      object-fit: cover;
     }
 
     header h1 {
@@ -62,18 +60,18 @@
     }
 
     .username {
-      font-size: 14px;
-      opacity: 0.9;
+      font-size: 15px;
+      opacity: 0.95;
       font-weight: 500;
     }
 
     main {
-      max-width: 850px;
-      margin: 40px auto;
+      max-width: 900px;
+      margin: 45px auto;
       background: #fff;
       border-radius: var(--radius);
-      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.08);
-      padding: 32px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+      padding: 38px;
       animation: fadeIn 0.6s ease;
     }
 
@@ -82,43 +80,60 @@
       font-weight: 600;
       color: var(--blue-dark);
       font-size: 18px;
-      border-left: 5px solid var(--blue);
-      padding-left: 10px;
-      margin-top: 32px;
-      margin-bottom: 10px;
+      border-left: 6px solid var(--blue);
+      padding-left: 12px;
+      margin-top: 38px;
+      margin-bottom: 14px;
     }
 
+    /* ===== Verdict Card ===== */
     .verdict-card {
       text-align: center;
-      border-radius: 16px;
-      padding: 28px;
-      background: #f3f8ff;
-      box-shadow: 0 3px 12px rgba(0, 0, 0, 0.05);
-      margin-bottom: 25px;
+      border-radius: 18px;
+      padding: 32px;
+      background: linear-gradient(180deg, #f8fbff, #e8f0ff);
+      box-shadow: 0 3px 16px rgba(25, 118, 210, 0.15);
+      margin-bottom: 30px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .verdict-card::after {
+      content: "";
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle at center, rgba(255,255,255,0.2), transparent 70%);
+      animation: glow 5s infinite linear;
     }
 
     .verdict-text {
       font-family: "Poppins", sans-serif;
-      font-size: 22px;
+      font-size: 26px;
       font-weight: 700;
       margin: 10px 0 5px;
     }
 
     .verdict-sub {
-      font-size: 14px;
+      font-size: 15px;
       color: var(--muted);
+      max-width: 600px;
+      margin: 0 auto;
     }
 
     .verdict-text.real { color: var(--green); }
     .verdict-text.fake { color: var(--red); }
     .verdict-text.uncertain { color: var(--yellow); }
 
+    /* ===== Key Summary ===== */
     .keyval {
       display: grid;
-      grid-template-columns: 160px 1fr;
-      gap: 8px 10px;
+      grid-template-columns: 180px 1fr;
+      gap: 10px 14px;
       font-size: 15px;
-      margin-top: 10px;
+      margin-top: 12px;
     }
 
     .keyval div:first-child {
@@ -126,21 +141,20 @@
       color: #2b2b2b;
     }
 
-    .prediction-display {
-      font-weight: 600;
-      padding: 10px 14px;
-      border-radius: 10px;
-      margin-top: 12px;
+    .badge {
       display: inline-block;
-      font-size: 15px;
-      background: #f8fbff;
-      border-left: 6px solid;
+      padding: 4px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
     }
 
-    .prediction-display.real { border-color: var(--green); color: var(--green); }
-    .prediction-display.fake { border-color: var(--red); color: var(--red); }
-    .prediction-display.uncertain { border-color: var(--yellow); color: var(--yellow); }
+    .badge.real { background: #e8f5e9; color: var(--green); }
+    .badge.fake { background: #ffebee; color: var(--red); }
+    .badge.uncertain { background: #fff8e1; color: var(--yellow); }
+    .badge.info { background: #e3f2fd; color: var(--blue-dark); }
 
+    /* ===== Confidence Bar ===== */
     .confidence-bar {
       height: 10px;
       background: #e0e0e0;
@@ -152,7 +166,7 @@
 
     .confidence-fill {
       height: 100%;
-      transition: width 0.8s ease-out;
+      transition: width 1.2s ease-out;
       border-radius: 6px;
     }
 
@@ -166,13 +180,14 @@
       font-weight: 600;
     }
 
+    /* ===== Evidence & Explanation ===== */
     .evidence-box {
       background: #f9fbff;
-      padding: 14px;
-      border-radius: 12px;
-      max-height: 300px;
+      padding: 18px;
+      border-radius: 14px;
+      max-height: 340px;
       overflow-y: auto;
-      box-shadow: inset 0 0 6px rgba(0,0,0,0.05);
+      box-shadow: inset 0 0 8px rgba(0,0,0,0.05);
     }
 
     .evidence-line {
@@ -197,19 +212,21 @@
       text-align: center;
       color: #777;
       font-size: 13px;
-      margin: 40px 0 20px;
+      margin: 50px 0 20px;
     }
 
+    /* ===== Back Button ===== */
     .back-btn {
       background: var(--blue);
       color: white;
-      padding: 10px 20px;
+      padding: 12px 24px;
       border: none;
       border-radius: 10px;
       cursor: pointer;
       font-weight: 600;
       transition: all 0.3s ease;
-      margin-top: 20px;
+      margin-top: 24px;
+      box-shadow: 0 4px 10px rgba(25,118,210,0.25);
     }
 
     .back-btn:hover {
@@ -217,9 +234,24 @@
       transform: translateY(-1px);
     }
 
+    .visit-link {
+      display: inline-block;
+      margin-top: 10px;
+      color: var(--blue-dark);
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .visit-link:hover { text-decoration: underline; }
+
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: none; }
+    }
+
+    @keyframes glow {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
     }
 
     ::-webkit-scrollbar { width: 8px; }
@@ -250,7 +282,7 @@
         <div class="verdict-sub">Mixed indicators found — verify using additional sources.</div>
       {% else %}
         <div class="verdict-text real">✅ Trusted Article</div>
-        <div class="verdict-sub">This content is consistent with credible sources and factual writing.</div>
+        <div class="verdict-sub">This content aligns with credible and factual writing.</div>
       {% endif %}
     </div>
 
@@ -259,10 +291,10 @@
       <h2>Scan Summary</h2>
       <div class="keyval">
         <div>Headline:</div> <div><b>{{ row[1] or "—" }}</b></div>
-        <div>URL:</div> <div><a href="{{ row[2] }}" target="_blank">{{ row[2] }}</a></div>
+        <div>URL:</div> <div><a href="{{ row[2] }}" target="_blank" class="visit-link">{{ row[2] }}</a></div>
         <div>Date:</div> <div>{{ row[8] }}</div>
-        <div>Language:</div> <div>{{ language }}</div>
-        <div>Model Used:</div> <div>{{ model_used }}</div>
+        <div>Language:</div> <div><span class="badge info">{{ language }}</span></div>
+        <div>Model Used:</div> <div><span class="badge info">{{ model_used }}</span></div>
       </div>
 
       <div class="prediction-display 
@@ -334,11 +366,9 @@
         <div>Domain:</div> <div>{{ trust.domain }}</div>
         <div>Trust Score:</div> <div><b>{{ trust.trust_score }}</b></div>
         <div>Category:</div> 
-        <div>
-          <span class="{% if trust.category == 'Trusted' or trust.category == 'Trusted (Malaysia)' %}real{% elif trust.category == 'Suspicious' %}fake{% else %}uncertain{% endif %}">
-            {{ trust.category }}
-          </span>
-        </div>
+        <div><span class="badge {% if trust.category.startswith('Trusted') %}real{% elif trust.category == 'Suspicious' %}fake{% else %}uncertain{% endif %}">
+          {{ trust.category }}
+        </span></div>
       </div>
     </section>
 
@@ -355,28 +385,23 @@
     if (bar) {
       const finalWidth = bar.style.width;
       bar.style.width = "0";
-      setTimeout(() => { bar.style.width = finalWidth; }, 200);
+      setTimeout(() => { bar.style.width = finalWidth; }, 300);
     }
 
     const backBtn = document.getElementById("backBtn");
     backBtn?.addEventListener("click", () => {
       const articleUrl = "{{ row[2] }}";
-
-      // ✅ Smooth fade out before redirect
       document.body.style.transition = "opacity 0.4s ease";
       document.body.style.opacity = "0";
-
       setTimeout(() => {
         if (articleUrl && articleUrl !== "—" && articleUrl.startsWith("http")) {
-          // 🔹 Redirect user to the same article (reuse current tab)
           window.location.href = articleUrl;
         } else {
-          // 🔹 Fallback: go back to previous page
           window.history.back();
         }
       }, 350);
     });
   });
-</script>
+  </script>
 </body>
 </html>
