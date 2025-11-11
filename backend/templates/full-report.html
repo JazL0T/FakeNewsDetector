@@ -94,11 +94,8 @@
       padding: 28px;
       background: #f3f8ff;
       box-shadow: 0 3px 12px rgba(0, 0, 0, 0.05);
-      transition: transform 0.3s ease;
       margin-bottom: 25px;
     }
-
-    .verdict-card:hover { transform: translateY(-3px); }
 
     .verdict-text {
       font-family: "Poppins", sans-serif;
@@ -277,13 +274,13 @@
 
       <div class="confidence-value">
         Confidence: 
-        <b style="color:{% if row[5] > 0.8 %}var(--green){% elif row[5] > 0.6 %}var(--yellow){% else %}var(--red){% endif %}">
+        <b style="color:{% if row[5] >= 0.8 %}var(--green){% elif row[5] >= 0.6 %}var(--yellow){% else %}var(--red){% endif %}">
           {{ "%.1f"|format(row[5] * 100) }}%
         </b>
       </div>
 
       <div class="confidence-bar">
-        <div class="confidence-fill {% if row[4] == '0' %}fake{% elif 'Likely' in row[4] or trust.category == 'Uncertain' %}uncertain{% else %}real{% endif %}" 
+        <div class="confidence-fill {% if row[5] >= 0.8 %}real{% elif row[5] >= 0.6 %}uncertain{% else %}fake{% endif %}"
           style="width: {{ ((row[5] or 0) * 100) | string + '%' }}"></div>
       </div>
     </section>
@@ -336,7 +333,7 @@
       </div>
     </section>
 
-    <button class="back-btn" onclick="window.history.back()">⬅ Back</button>
+    <button class="back-btn" id="backBtn">⬅ Back to Article</button>
   </main>
 
   <footer>
@@ -351,6 +348,18 @@
         bar.style.width = "0";
         setTimeout(() => { bar.style.width = finalWidth; }, 200);
       }
+
+      // Back button → open article & close tab
+      const backBtn = document.getElementById("backBtn");
+      backBtn?.addEventListener("click", () => {
+        const articleUrl = "{{ row[2] }}";
+        if (articleUrl && articleUrl !== "—") {
+          window.open(articleUrl, "_blank");
+          window.close();
+        } else {
+          window.history.back();
+        }
+      });
     });
   </script>
 </body>
