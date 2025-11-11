@@ -18,7 +18,6 @@ from dotenv import load_dotenv
 import tldextract
 from functools import lru_cache
 from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 from langdetect import detect, LangDetectException
 
 # ============================================================== #
@@ -51,10 +50,19 @@ logging.basicConfig(
 )
 
 # ============================================================== #
-# RATE LIMITING
+# RATE LIMITING (20 per minute per user)
 # ============================================================== #
-limiter = Limiter(get_remote_address, app=app, default_limits=["50 per minute"])
-logging.info("🛡️ Rate limiting: 50 req/min per client")
+def get_user_or_ip():
+    """Limit logged-in users by username, guests by IP address."""
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        username = jwt.decode(token, app.config["JWT_SECRET"], algorithms=["HS256"]).get("username")
+    except Exception:
+        username = None
+    return username or request.remote_addr
+
+limiter = Limiter(get_user_or_ip, app=app, default_limits=["100 per minute"])
+logging.info("🛡️ Rate limiting: 20 predictions/min per user, 100 requests/min globally")
 
 # ============================================================== #
 # MODELS (Lazy Load)
@@ -159,20 +167,14 @@ def _cached_predict(lang: str, clean_text_hash: str, original_text: str):
         conf = float(max(probs))
         class_probs = {"0": float(probs[0]), "1": float(probs[1])}
     else:
-        # fallback confidence if model has no proba
-        if hasattr(model, "decision_function"):
-            df = model.decision_function(features)
-            conf = float(1 / (1 + math.exp(-abs(df[0]))))
-        else:
-            conf = 0.5
-        class_probs = {"0": 1 - conf, "1": conf}
+        conf, class_probs = 0.5, {"0": 0.5, "1": 0.5}
 
     return {
         "prediction": str(pred),
         "confidence": conf,
         "class_probs": class_probs,
         "model_used": used,
-        "coef_vector": coef  # <- needed by explainability
+        "coef_vector": coef
     }
 
 def predict_fake_news(text: str):
@@ -230,58 +232,37 @@ def _tfidf_line_score(line: str, vectorizer, coef_vector):
         idx = vectorizer.vocabulary_.get(tok)
         if idx is not None and idx < len(coef_vector):
             score += float(coef_vector[idx])
-    return score  # positive => realish, negative => fakeish
+    return score
 
 def _line_heuristics(line: str):
     s = TextBlob(line).sentiment.polarity
     excls = line.count("!")
     words = line.split()
     upper_ratio = sum(1 for w in words if w.isupper()) / max(1, len(words))
-    # fake pressure ~0..1 ; convert to signed weight centered at 0.5
     fake_pressure = 0.5 * (1 - abs(s)) + 0.3 * upper_ratio + 0.2 * min(excls / 3, 1)
-    return 0.5 - fake_pressure  # positive => realish, negative => fakeish
+    return 0.5 - fake_pressure
 
 def explain_text(text: str, trust: dict, final_pred: str, model_used: str):
-    """
-    Returns:
-      highlighted_lines: [{text, weight, tags}], reasons: [str]
-    """
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     highlighted, reasons = [], []
-
-    # pick the active vec/coef based on model used
     if model_used.lower() == "malay" and _my_vectorizer is not None:
         vec, coef = _my_vectorizer, _my_coef
     else:
         vec, coef = _en_vectorizer, _en_coef
-
-    # global/domain reason
     reasons.append(f"Domain '{trust.get('domain')}' categorized as {trust.get('category')}.")
-
     for ln in lines:
         w_tfidf = _tfidf_line_score(ln, vec, coef)
         w_heur = _line_heuristics(ln)
         f_hits, r_hits = _kw_hits(ln)
-
-        kw_signal = 0.0
-        if f_hits: kw_signal -= 0.3 * len(f_hits)
-        if r_hits: kw_signal += 0.2 * len(r_hits)
-
+        kw_signal = (-0.3 * len(f_hits)) + (0.2 * len(r_hits))
         total = w_tfidf + w_heur + kw_signal
         tags = []
         if f_hits: tags.append(f"Fake cues: {', '.join(f_hits)}")
         if r_hits: tags.append(f"Real cues: {', '.join(r_hits)}")
         if abs(w_tfidf) > 0.2: tags.append("Model-weighted term influence")
-
         highlighted.append({"text": ln, "weight": total, "tags": tags})
-
     highlighted.sort(key=lambda d: abs(d["weight"]), reverse=True)
-
-    if final_pred == "Fake":
-        reasons.append("Model detected sensational/biased tone and cues.")
-    else:
-        reasons.append("Model detected balanced/factual tone and cues.")
-
+    reasons.append("Model detected sensational/biased tone." if final_pred == "Fake" else "Model detected factual language.")
     return highlighted[:50], reasons
 
 # ============================================================== #
@@ -340,7 +321,7 @@ def login():
 
 # --- PREDICT ---
 @app.route("/predict", methods=["POST"])
-@limiter.limit("10 per minute")
+@limiter.limit("20 per minute")
 def predict():
     try:
         token = request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -350,14 +331,11 @@ def predict():
         if not text:
             return jsonify({"error": "Missing text"}), 400
 
-        ml, used_malay = predict_fake_news(text)
+        ml, _ = predict_fake_news(text)
         final_label = "Fake" if ml["prediction"] == "0" else "Real"
         heur = analyze_text_heuristics(text)
         trust = compute_trustability(url)
-
-        # choose model used for explanation
-        model_used = ml["model_used"]
-        lines, reasons = explain_text(text, trust, final_label, model_used)
+        lines, reasons = explain_text(text, trust, final_label, ml["model_used"])
 
         if username:
             with get_db_connection() as conn:
@@ -372,13 +350,13 @@ def predict():
             "headline": headline,
             "url": url,
             "language": ml["language"],
-            "model_used": model_used,
+            "model_used": ml["model_used"],
             "prediction": final_label,
             "confidence": ml["confidence"],
             "class_probs": ml["class_probs"],
             "heuristics": heur,
             "trustability": trust,
-            "explain": {"lines": lines, "reasons": reasons}  # <-- for popup if needed
+            "explain": {"lines": lines, "reasons": reasons}
         })
     except Exception:
         logging.exception("Prediction error")
@@ -412,7 +390,6 @@ def get_report(scan_id):
     username = verify_jwt(token)
     if not username:
         return "<h3>Unauthorized</h3>", 401
-
     with get_db_connection() as conn:
         cur = conn.cursor()
         cur.execute("""SELECT id, headline, url, text, prediction, confidence, heuristics, trustability, timestamp
@@ -420,26 +397,15 @@ def get_report(scan_id):
         row = cur.fetchone()
     if not row:
         return "<h3>Report not found.</h3>", 404
-
-    heur = json.loads(row[6])
-    trust = json.loads(row[7])
+    heur, trust = json.loads(row[6]), json.loads(row[7])
     label = "Fake" if row[4] == "0" else "Real"
-
-    # 🔄 Regenerate explanation on-the-fly so reports always have evidence
     lang = detect_lang(row[3] or "")
     load_models_if_needed("ms" if lang == "ms" else "en")
     model_used = "Malay" if (lang == "ms" and _my_model and _my_vectorizer) else "English"
     highlighted_lines, explain_reasons = explain_text(row[3] or "", trust, label, model_used)
-
-    return render_template(
-        "full-report.html",
-        row=row,
-        heur=heur,
-        trust=trust,
-        username=username,
-        highlighted_lines=highlighted_lines,
-        explain_reasons=explain_reasons,
-    )
+    return render_template("full-report.html", row=row, heur=heur, trust=trust,
+                           username=username, highlighted_lines=highlighted_lines,
+                           explain_reasons=explain_reasons)
 
 # ============================================================== #
 # MAIN
