@@ -386,28 +386,28 @@
   </footer>
 
   <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      const bar = document.querySelector(".confidence-fill");
-      if (bar) {
-        const finalWidth = bar.style.width;
-        bar.style.width = "0";
-        setTimeout(() => { bar.style.width = finalWidth; }, 300);
-      }
+  document.addEventListener("DOMContentLoaded", () => {
+    const bar = document.querySelector(".confidence-fill");
+    if (bar) {
+      const finalWidth = bar.style.width;
+      bar.style.width = "0";
+      setTimeout(() => { bar.style.width = finalWidth; }, 300);
+    }
 
-      const backBtn = document.getElementById("backBtn");
-      backBtn?.addEventListener("click", () => {
-        const articleUrl = "{{ row[2] }}";
-        document.body.style.transition = "opacity 0.4s ease";
-        document.body.style.opacity = "0";
-        setTimeout(() => {
-          if (articleUrl && articleUrl !== "—" && articleUrl.startsWith("http")) {
-            window.location.href = articleUrl;
-          } else {
-            window.history.back();
-          }
-        }, 350);
-      });
+    const backBtn = document.getElementById("backBtn");
+    backBtn?.addEventListener("click", () => {
+      const articleUrl = {{ row[2] | tojson }};
+      document.body.style.transition = "opacity 0.4s ease";
+      document.body.style.opacity = "0";
+      setTimeout(() => {
+        if (articleUrl && articleUrl !== "—" && articleUrl.startsWith("http")) {
+          window.location.href = articleUrl;
+        } else {
+          window.history.back();
+        }
+      }, 350);
     });
-  </script>
+  });
+</script>
 </body>
 </html>
