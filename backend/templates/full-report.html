@@ -218,22 +218,28 @@
     ::-webkit-scrollbar-thumb { background: #c5cae9; border-radius: 6px; }
 
     .tendency-text {
-  font-size: 13.5px;
-  color: var(--muted);
-  margin-top: 4px;
-  font-weight: 500;
-}
+      font-size: 13.5px;
+      color: var(--muted);
+      margin-top: 4px;
+      font-weight: 500;
+    }
 
-.tendency-text .real-word {
-  color: var(--green);
-  font-weight: 600;
-}
+    .tendency-text .real-word { color: var(--green); font-weight: 600; }
+    .tendency-text .fake-word { color: var(--red); font-weight: 600; }
 
-.tendency-text .fake-word {
-  color: var(--red);
-  font-weight: 600;
-}
+    .open-article-btn {
+      display: inline-block;
+      margin-top: 12px;
+      background: var(--blue);
+      color: white;
+      padding: 8px 14px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 500;
+      transition: 0.3s;
+    }
 
+    .open-article-btn:hover { background: var(--blue-dark); }
   </style>
 </head>
 
@@ -252,6 +258,9 @@
       {% if row[4] == '0' %}
         <div class="verdict-text fake">🚨 Fake News Detected</div>
         <div class="verdict-sub">This article contains indicators of misinformation or unreliable claims.</div>
+      {% elif 'Likely' in row[4] %}
+        <div class="verdict-text uncertain">🟡 Likely Real</div>
+        <div class="verdict-sub">Trusted source detected but mixed signals found — likely real.</div>
       {% elif trust.category == 'Uncertain' %}
         <div class="verdict-text uncertain">⚠️ Uncertain Reliability</div>
         <div class="verdict-sub">Mixed indicators found — verify further with trusted sources.</div>
@@ -259,6 +268,8 @@
         <div class="verdict-text real">✅ Trusted Article</div>
         <div class="verdict-sub">This article aligns with reliable patterns and credible sources.</div>
       {% endif %}
+
+      <a href="{{ row[2] }}" target="_blank" class="open-article-btn">🔗 Open Original Article</a>
     </div>
 
     <!-- Scan Summary -->
@@ -268,36 +279,36 @@
         <div>Headline:</div> <div><b>{{ row[1] or "—" }}</b></div>
         <div>URL:</div> <div><a href="{{ row[2] }}" target="_blank">{{ row[2] }}</a></div>
         <div>Date:</div> <div>{{ row[8] }}</div>
+        <div>Language:</div> <div>{{ language }}</div>
+        <div>Model Used:</div> <div>{{ model_used }}</div>
       </div>
 
-      <!-- 🧠 Prediction with Tendency Display -->
-<div class="prediction-display {% if row[4] == '0' %}fake{% elif trust.category == 'Uncertain' %}uncertain{% else %}real{% endif %}">
-  {% if row[4] == '0' %}
-    🚨 Prediction Result: Fake
-  {% elif trust.category == 'Uncertain' %}
-    ⚠️ Prediction Result: Uncertain
-    <div class="tendency-text">
-      {% if row[5] >= 0.5 %}
-        (Higher tendency towards <span class="real-word">Real</span>)
-      {% else %}
-        (Higher tendency towards <span class="fake-word">Fake</span>)
-      {% endif %}
-    </div>
-  {% else %}
-    ✅ Prediction Result: Real
-  {% endif %}
-</div>
+      <!-- Prediction -->
+      <div class="prediction-display {% if row[4] == '0' %}fake{% elif 'Likely' in row[4] or trust.category == 'Uncertain' %}uncertain{% else %}real{% endif %}">
+        {% if row[4] == '0' %}
+          🚨 Prediction Result: Fake
+        {% elif 'Likely' in row[4] %}
+          🟡 Prediction Result: Likely Real
+        {% elif trust.category == 'Uncertain' %}
+          ⚠️ Prediction Result: Uncertain
+        {% else %}
+          ✅ Prediction Result: Real
+        {% endif %}
+      </div>
 
-<div class="confidence-value">
-  Confidence Level: <b>{{ "%.1f"|format(row[5] * 100) }}%</b>
-</div>
+      <div class="confidence-value">
+        Model Confidence: 
+        <b style="color:{% if row[5] > 0.8 %}var(--green){% elif row[5] > 0.6 %}var(--yellow){% else %}var(--red){% endif %};">
+          {{ "%.1f"|format(row[5] * 100) }}%
+        </b>
+      </div>
 
-<div class="confidence-bar">
-  <div class="confidence-fill 
-    {% if row[4] == '0' %}fake{% elif trust.category == 'Uncertain' %}uncertain{% else %}real{% endif %}"
-    style="width: {{ ((row[5] or 0) * 100) | string + '%' }};">
-  </div>
-</div>
+      <div class="confidence-bar">
+        <div class="confidence-fill 
+          {% if row[4] == '0' %}fake{% elif 'Likely' in row[4] or trust.category == 'Uncertain' %}uncertain{% else %}real{% endif %}"
+          style="width: {{ ((row[5] or 0) * 100) | string + '%' }};">
+        </div>
+      </div>
     </section>
 
     <!-- Why This Result -->
@@ -329,6 +340,7 @@
           {% endfor %}
         </div>
         <p style="font-size:12.5px; color:#777;">🟢 Green = factual tone | 🔴 Red = potentially misleading text</p>
+        <p style="font-size:12px; color:#888;">💡 <b>Legend:</b> Green indicates factual or balanced content, Red shows emotional or biased phrasing, derived from model weights, sentiment, and keyword patterns.</p>
       {% else %}
         <p>No highlighted evidence found.</p>
       {% endif %}
