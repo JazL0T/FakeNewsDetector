@@ -239,13 +239,13 @@
   <main>
     <!-- Verdict -->
     <div class="verdict-card">
-      {% if row[4] == '0' %}
+      {% if 'Fake' in row[4] %}
         <div class="verdict-text fake">🚨 Fake News Detected</div>
         <div class="verdict-sub">This article shows strong signs of misinformation or unreliable claims.</div>
       {% elif 'Likely' in row[4] %}
         <div class="verdict-text uncertain">🟡 Likely Real</div>
         <div class="verdict-sub">Appears factual but with minor inconsistencies or bias detected.</div>
-      {% elif trust.category == 'Uncertain' %}
+      {% elif 'Uncertain' in row[4] %}
         <div class="verdict-text uncertain">⚠️ Uncertain Reliability</div>
         <div class="verdict-sub">Mixed indicators found — verify using additional sources.</div>
       {% else %}
@@ -265,18 +265,21 @@
         <div>Model Used:</div> <div>{{ model_used }}</div>
       </div>
 
-      <div class="prediction-display {% if row[4] == '0' %}fake{% elif 'Likely' in row[4] or trust.category == 'Uncertain' %}uncertain{% else %}real{% endif %}">
-        {% if row[4] == '0' %} 🚨 Prediction: Fake
+      <div class="prediction-display 
+        {% if 'Fake' in row[4] %}fake
+        {% elif 'Likely' in row[4] or 'Uncertain' in row[4] %}uncertain
+        {% else %}real{% endif %}">
+        {% if 'Fake' in row[4] %} 🚨 Prediction: Fake
         {% elif 'Likely' in row[4] %} 🟡 Prediction: Likely Real
-        {% elif trust.category == 'Uncertain' %} ⚠️ Prediction: Uncertain
+        {% elif 'Uncertain' in row[4] %} ⚠️ Prediction: Uncertain
         {% else %} ✅ Prediction: Real {% endif %}
       </div>
 
       <div class="confidence-value">
         Confidence:
         <b style="color:
-          {% if row[4] == '0' %}var(--red)
-          {% elif 'Likely' in row[4] or trust.category == 'Uncertain' %}var(--yellow)
+          {% if 'Fake' in row[4] %}var(--red)
+          {% elif 'Likely' in row[4] or 'Uncertain' in row[4] %}var(--yellow)
           {% else %}var(--green){% endif %}">
           {{ "%.1f"|format(row[5] * 100) }}%
         </b>
@@ -284,8 +287,8 @@
 
       <div class="confidence-bar">
         <div class="confidence-fill 
-          {% if row[4] == '0' %}fake
-          {% elif 'Likely' in row[4] or trust.category == 'Uncertain' %}uncertain
+          {% if 'Fake' in row[4] %}fake
+          {% elif 'Likely' in row[4] or 'Uncertain' in row[4] %}uncertain
           {% else %}real{% endif %}"
           style="width: {{ ((row[5] or 0) * 100) | string + '%' }}"></div>
       </div>
@@ -355,7 +358,6 @@
         setTimeout(() => { bar.style.width = finalWidth; }, 200);
       }
 
-      // 🧭 Back button — opens article & safely closes tab
       const backBtn = document.getElementById("backBtn");
       backBtn?.addEventListener("click", () => {
         const articleUrl = "{{ row[2] }}";
