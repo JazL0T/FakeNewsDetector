@@ -301,7 +301,7 @@
     <div class="verdict-title fake">Fake News Detected</div>
     <p class="verdict-desc">This article shows strong signs of misinformation or unreliable claims.</p>
   {% elif 'Likely' in row[4] %}
-    <div class="verdict-icon uncertain">🟡</div>
+    <div class="verdict-icon uncertain">⚠️</div>
     <div class="verdict-title uncertain">Likely Real</div>
     <p class="verdict-desc">Appears factual but with minor inconsistencies or bias detected.</p>
   {% elif 'Uncertain' in row[4] %}
@@ -340,7 +340,7 @@
     </div>
 
     <div class="card">
-      <h2><span>🧠</span> Why We Think So</h2>
+      <h2><span></span> Why We Think So</h2>
       {% if explain_reasons %}
         <ul>
           {% for reason in explain_reasons %}
@@ -353,7 +353,7 @@
     </div>
 
     <div class="card">
-      <h2><span>📑</span> Evidence Extracted</h2>
+      <h2><span></span> Evidence Extracted</h2>
       {% if highlighted_lines %}
         <div class="evidence-box">
           {% for line in highlighted_lines[:20] %}
@@ -367,7 +367,7 @@
     </div>
 
     <div class="card">
-      <h2><span>🌐</span> Source Trust Analysis</h2>
+      <h2><span></span> Source Trust Analysis</h2>
       <div class="keyval">
         <div>Domain:</div> <div>{{ trust.domain }}</div>
         <div>Trust Score:</div> <div><b>{{ trust.trust_score }}</b></div>
