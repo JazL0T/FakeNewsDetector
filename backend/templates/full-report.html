@@ -401,7 +401,7 @@
       document.body.style.opacity = "0";
       setTimeout(() => {
         if (articleUrl && articleUrl !== "—" && articleUrl.startsWith("http")) {
-          window.location.href = articleUrl;
+          window.location.replace = articleUrl;
         } else {
           window.history.back();
         }
