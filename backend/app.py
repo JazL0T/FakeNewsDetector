@@ -1,7 +1,7 @@
 # ==============================================================
 #  Fake News Detector 101 — Optimized Explainable AI API
 #  Version: Render-Ready (2025.11 FINAL)
-#  Features: Dual EN/MY Models + Auth + History + Reports + Explainability
+#  Features: Dual EN/MY Models (Malay text only) + Auth + History + Explainability
 # ==============================================================
 
 import warnings
@@ -9,7 +9,7 @@ warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
-import joblib, re, os, sqlite3, logging, json, math, time, threading, hashlib
+import joblib, re, os, sqlite3, logging, json, time, threading, hashlib
 from datetime import datetime, timedelta
 import jwt
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -50,7 +50,7 @@ logging.basicConfig(
 )
 
 # ============================================================== #
-# RATE LIMITING (20 requests per 20 minutes per user/IP)
+# RATE LIMITING
 # ============================================================== #
 def get_user_or_ip():
     """Limit logged-in users by username; guests by IP."""
@@ -63,16 +63,19 @@ def get_user_or_ip():
 
 limiter = Limiter(get_user_or_ip, app=app, default_limits=["100 per 20 minutes"])
 PREDICT_LIMIT = "20 per 20 minutes"
-logging.info("🛡️ Rate limiting: 20 predictions/20min per user, 100 req/20min global")
+logging.info("🛡️ Rate limiting enabled: 20 predictions per 20 minutes")
 
 # ============================================================== #
-# MODELS (Lazy Load + Background warmup for EN)
+# MODEL LOADING (Lazy + Background warmup)
 # ============================================================== #
 _en_model = _en_vectorizer = _en_coef = None
 _my_model = _my_vectorizer = _my_coef = None
 _model_lock = threading.Lock()
 
 def _load_pair(model_path, vec_path):
+    """Load model and vectorizer safely."""
+    if not os.path.exists(model_path) or not os.path.exists(vec_path):
+        raise FileNotFoundError(f"Missing model/vectorizer: {model_path}")
     m = joblib.load(model_path)
     v = joblib.load(vec_path)
     coef = m.coef_[0] if hasattr(m, "coef_") else None
@@ -82,31 +85,28 @@ def load_models_if_needed(lang: str):
     global _en_model, _en_vectorizer, _en_coef
     global _my_model, _my_vectorizer, _my_coef
     with _model_lock:
-        if lang == "en":
-            if _en_model is None or _en_vectorizer is None:
-                t0 = time.time()
-                _en_model, _en_vectorizer, _en_coef = _load_pair(MODEL_PATH_EN, VECTORIZER_PATH_EN)
-                logging.info(f"✅ English model loaded in {time.time()-t0:.2f}s")
-        else:
-            if _my_model is None or _my_vectorizer is None:
-                if not (os.path.exists(MODEL_PATH_MY) and os.path.exists(VECTORIZER_PATH_MY)):
-                    logging.warning("⚠️ Malay model/vectorizer missing — fallback to English.")
-                    return
-                t0 = time.time()
-                _my_model, _my_vectorizer, _my_coef = _load_pair(MODEL_PATH_MY, VECTORIZER_PATH_MY)
-                logging.info(f"✅ Malay model loaded in {time.time()-t0:.2f}s")
+        try:
+            if lang == "en":
+                if _en_model is None or _en_vectorizer is None:
+                    t0 = time.time()
+                    _en_model, _en_vectorizer, _en_coef = _load_pair(MODEL_PATH_EN, VECTORIZER_PATH_EN)
+                    logging.info(f"✅ English model loaded in {time.time()-t0:.2f}s")
+            elif lang == "ms":
+                if _my_model is None or _my_vectorizer is None:
+                    t0 = time.time()
+                    _my_model, _my_vectorizer, _my_coef = _load_pair(MODEL_PATH_MY, VECTORIZER_PATH_MY)
+                    logging.info(f"✅ Malay model loaded in {time.time()-t0:.2f}s")
+        except Exception as e:
+            logging.warning(f"⚠️ Model load failed for {lang}: {e}")
+            if lang == "ms":
+                logging.info("🔁 Fallback to English model.")
+                load_models_if_needed("en")
 
-def _preload_en():
-    try:
-        load_models_if_needed("en")
-        logging.info("🚀 Background preload: EN model ready.")
-    except Exception as e:
-        logging.error(f"Preload failed: {e}")
-
-threading.Thread(target=_preload_en, daemon=True).start()
+# preload English model in background
+threading.Thread(target=lambda: load_models_if_needed("en"), daemon=True).start()
 
 # ============================================================== #
-# DATABASE (SQLite WAL)
+# DATABASE
 # ============================================================== #
 def init_db():
     with sqlite3.connect(app.config["DB_PATH"]) as conn:
@@ -152,29 +152,34 @@ def tokenize_text(text: str) -> str:
     return text.lower().strip()
 
 def detect_lang(text: str) -> str:
-    """Bilingual detection with Malay keywords fallback."""
+    """Detect Malay only if text language is Malay or contains Malay words."""
     try:
         code = detect(text)
-        if any(w in text.lower() for w in ["kerajaan","rakyat","berita","politik","bantuan","negara","negeri","parlimen","menteri"]):
-            return "ms"
-        return "ms" if code == "ms" else "en"
     except LangDetectException:
-        return "en"
+        code = "en"
+
+    text_lower = text.lower()
+    malay_keywords = [
+        "kerajaan","rakyat","berita","politik","bantuan",
+        "negara","negeri","parlimen","menteri","malaysia","sabahan"
+    ]
+
+    if code == "ms" or any(w in text_lower for w in malay_keywords):
+        return "ms"
+    return "en"
 
 @lru_cache(maxsize=512)
 def _cached_predict(lang: str, clean_text_hash: str, original_text: str):
     load_models_if_needed(lang)
-    if lang == "ms" and _my_model and _my_vectorizer:
-        model, vec, coef, used = _my_model, _my_vectorizer, _my_coef, "Malay"
-    else:
-        model, vec, coef, used = _en_model, _en_vectorizer, _en_coef, "English"
+    model, vec, coef, used = (
+        (_my_model, _my_vectorizer, _my_coef, "Malay")
+        if lang == "ms" and _my_model and _my_vectorizer
+        else (_en_model, _en_vectorizer, _en_coef, "English")
+    )
 
     features = vec.transform([original_text])
     pred = model.predict(features)[0]
-    if hasattr(model, "predict_proba"):
-        probs = model.predict_proba(features)[0]
-    else:
-        probs = [0.5, 0.5]
+    probs = model.predict_proba(features)[0] if hasattr(model, "predict_proba") else [0.5, 0.5]
     conf = float(max(probs))
     return {
         "prediction": str(pred),
@@ -191,6 +196,7 @@ def predict_fake_news(text: str):
     text_hash = hashlib.sha256(tokenize_text(text).encode()).hexdigest()
     res = _cached_predict(lang, text_hash, text)
     res["language"] = "Malay" if lang == "ms" else "English"
+    logging.info(f"🧠 Detected language from text → {res['language']}")
     return res, (lang == "ms" and _my_model and _my_vectorizer)
 
 def analyze_text_heuristics(text: str) -> dict:
@@ -203,7 +209,7 @@ def analyze_text_heuristics(text: str) -> dict:
     return {"sentiment": sentiment, "uppercase_ratio": upper_ratio, "exclamations": exclamations, "fake_score": fake_score}
 
 # ============================================================== #
-# TRUSTABILITY (Cached) — includes Malaysia sources
+# TRUSTABILITY
 # ============================================================== #
 @lru_cache(maxsize=400)
 def compute_trustability(url: str) -> dict:
@@ -272,10 +278,7 @@ def explain_text(text: str, trust: dict, final_pred: str, model_used: str):
         highlighted.append({"text": ln, "weight": total, "tags": tags})
 
     highlighted.sort(key=lambda d: abs(d["weight"]), reverse=True)
-    if final_pred == "Fake":
-        reasons.append("Model detected sensational/biased tone.")
-    else:
-        reasons.append("Model detected balanced/factual language.")
+    reasons.append("Model detected sensational/biased tone." if final_pred == "Fake" else "Model detected balanced/factual language.")
     return highlighted[:50], reasons
 
 # ============================================================== #
@@ -341,9 +344,7 @@ def predict():
         token = request.headers.get("Authorization", "").replace("Bearer ", "")
         username = verify_jwt(token)
         data = request.get_json() or {}
-        text = data.get("text", "")
-        headline = data.get("headline", "")
-        url = data.get("url", "")
+        text, headline, url = data.get("text", ""), data.get("headline", ""), data.get("url", "")
         if not text:
             return jsonify({"error": "Missing text"}), 400
 
@@ -352,11 +353,9 @@ def predict():
         heur = analyze_text_heuristics(text)
         trust = compute_trustability(url)
 
-        # Malaysia trust correction (reduce false "Fake" on mainstream .my)
+        # Malaysia trust correction
         if trust["category"].startswith("Trusted (Malaysia)") and final_label == "Fake":
             ml["confidence"] *= 0.6
-            # Keep label "Fake" but confidence lowered OR mark as "Likely Real"
-            # Choose one policy:
             final_label = "Likely Real"
 
         lines, reasons = explain_text(text, trust, final_label, ml["model_used"])
@@ -433,7 +432,6 @@ def get_report(scan_id):
     trust = json.loads(row[7])
     label = "Fake" if row[4] == "0" else "Real"
 
-    # Recompute explainability so report always has evidence
     lang = detect_lang(row[3] or "")
     load_models_if_needed("ms" if lang == "ms" else "en")
     model_used = "Malay" if (lang == "ms" and _my_model and _my_vectorizer) else "English"
