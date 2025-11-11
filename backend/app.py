@@ -427,6 +427,7 @@ def get_report(scan_id):
             FROM scans WHERE id=? AND username=?
         """, (scan_id, username))
         row = cur.fetchone()
+
     if not row:
         return "<h3>Report not found.</h3>", 404
 
@@ -434,11 +435,18 @@ def get_report(scan_id):
     trust = json.loads(row[7])
     label = "Fake" if row[4] == "0" else "Real"
 
+    # 🔹 Detect article language
     lang = detect_lang(row[3] or "")
     load_models_if_needed("ms" if lang == "ms" else "en")
+
+    # 🔹 Set values for frontend
     model_used = "Malay" if (lang == "ms" and _my_model and _my_vectorizer) else "English"
+    language = "Malay" if lang == "ms" else "English"
+
+    # 🔹 Explainable highlights
     highlighted_lines, explain_reasons = explain_text(row[3] or "", trust, label, model_used)
 
+    # ✅ Pass to HTML
     return render_template(
         "full-report.html",
         row=row,
@@ -447,6 +455,8 @@ def get_report(scan_id):
         username=username,
         highlighted_lines=highlighted_lines,
         explain_reasons=explain_reasons,
+        language=language,          # ✅ Added
+        model_used=model_used       # ✅ Added
     )
 
 # ============================================================== #
