@@ -273,14 +273,20 @@
       </div>
 
       <div class="confidence-value">
-        Confidence: 
-        <b style="color:{% if row[5] >= 0.8 %}var(--green){% elif row[5] >= 0.6 %}var(--yellow){% else %}var(--red){% endif %}">
+        Confidence:
+        <b style="color:
+          {% if row[4] == '0' %}var(--red)
+          {% elif 'Likely' in row[4] or trust.category == 'Uncertain' %}var(--yellow)
+          {% else %}var(--green){% endif %}">
           {{ "%.1f"|format(row[5] * 100) }}%
         </b>
       </div>
 
       <div class="confidence-bar">
-        <div class="confidence-fill {% if row[5] >= 0.8 %}real{% elif row[5] >= 0.6 %}uncertain{% else %}fake{% endif %}"
+        <div class="confidence-fill 
+          {% if row[4] == '0' %}fake
+          {% elif 'Likely' in row[4] or trust.category == 'Uncertain' %}uncertain
+          {% else %}real{% endif %}"
           style="width: {{ ((row[5] or 0) * 100) | string + '%' }}"></div>
       </div>
     </section>
@@ -349,13 +355,13 @@
         setTimeout(() => { bar.style.width = finalWidth; }, 200);
       }
 
-      // Back button → open article & close tab
+      // 🧭 Back button — opens article & safely closes tab
       const backBtn = document.getElementById("backBtn");
       backBtn?.addEventListener("click", () => {
         const articleUrl = "{{ row[2] }}";
         if (articleUrl && articleUrl !== "—") {
           window.open(articleUrl, "_blank");
-          window.close();
+          setTimeout(() => window.close(), 600);
         } else {
           window.history.back();
         }
