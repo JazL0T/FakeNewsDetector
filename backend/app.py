@@ -1,7 +1,7 @@
 # ==============================================================
 #  Fake News Detector 101 — Optimized Explainable AI API
 #  Version: Render-Ready (2025)
-#  Features: Dual EN/MY Models + Auth + History + Reports
+#  Features: Dual EN/MY Models + Auth + History + Reports + Explainability
 # ==============================================================
 
 import warnings
@@ -92,7 +92,7 @@ def preload_model_async():
 preload_model_async()
 
 # ============================================================== #
-# DATABASE (SQLite WAL + Retry)
+# DATABASE (SQLite WAL)
 # ============================================================== #
 def init_db():
     with sqlite3.connect(app.config["DB_PATH"]) as conn:
@@ -148,11 +148,9 @@ def detect_lang(text: str) -> str:
 def _cached_predict(lang: str, clean_text_hash: str, original_text: str):
     load_models_if_needed(lang)
     if lang == "ms" and _my_model and _my_vectorizer:
-        model, vec = _my_model, _my_vectorizer
-        used = "Malay"
+        model, vec, coef, used = _my_model, _my_vectorizer, _my_coef, "Malay"
     else:
-        model, vec = _en_model, _en_vectorizer
-        used = "English"
+        model, vec, coef, used = _en_model, _en_vectorizer, _en_coef, "English"
 
     features = vec.transform([original_text])
     pred = model.predict(features)[0]
@@ -161,8 +159,21 @@ def _cached_predict(lang: str, clean_text_hash: str, original_text: str):
         conf = float(max(probs))
         class_probs = {"0": float(probs[0]), "1": float(probs[1])}
     else:
-        conf, class_probs = 0.5, {"0": 0.5, "1": 0.5}
-    return {"prediction": str(pred), "confidence": conf, "class_probs": class_probs, "model_used": used}
+        # fallback confidence if model has no proba
+        if hasattr(model, "decision_function"):
+            df = model.decision_function(features)
+            conf = float(1 / (1 + math.exp(-abs(df[0]))))
+        else:
+            conf = 0.5
+        class_probs = {"0": 1 - conf, "1": conf}
+
+    return {
+        "prediction": str(pred),
+        "confidence": conf,
+        "class_probs": class_probs,
+        "model_used": used,
+        "coef_vector": coef  # <- needed by explainability
+    }
 
 def predict_fake_news(text: str):
     if not text.strip():
@@ -200,6 +211,78 @@ def compute_trustability(url: str) -> dict:
     if ".my" in domain:
         return {"domain": domain, "trust_score": 60, "category": "Unverified Malaysian Source"}
     return {"domain": domain, "trust_score": 50, "category": "Uncertain"}
+
+# ============================================================== #
+# EXPLAINABILITY ENGINE
+# ============================================================== #
+FAKE_KEYWORDS = {"shocking","exclusive","miracle","hoax","exposed","click here","secret","scam","rumor"}
+REAL_KEYWORDS = {"official","research","confirmed","report","sources","data","analysis","statement","evidence"}
+
+def _kw_hits(line: str):
+    l = line.lower()
+    return [w for w in FAKE_KEYWORDS if w in l], [w for w in REAL_KEYWORDS if w in l]
+
+def _tfidf_line_score(line: str, vectorizer, coef_vector):
+    if coef_vector is None or not hasattr(vectorizer, "vocabulary_"):
+        return 0.0
+    score = 0.0
+    for tok in tokenize_text(line).split():
+        idx = vectorizer.vocabulary_.get(tok)
+        if idx is not None and idx < len(coef_vector):
+            score += float(coef_vector[idx])
+    return score  # positive => realish, negative => fakeish
+
+def _line_heuristics(line: str):
+    s = TextBlob(line).sentiment.polarity
+    excls = line.count("!")
+    words = line.split()
+    upper_ratio = sum(1 for w in words if w.isupper()) / max(1, len(words))
+    # fake pressure ~0..1 ; convert to signed weight centered at 0.5
+    fake_pressure = 0.5 * (1 - abs(s)) + 0.3 * upper_ratio + 0.2 * min(excls / 3, 1)
+    return 0.5 - fake_pressure  # positive => realish, negative => fakeish
+
+def explain_text(text: str, trust: dict, final_pred: str, model_used: str):
+    """
+    Returns:
+      highlighted_lines: [{text, weight, tags}], reasons: [str]
+    """
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    highlighted, reasons = [], []
+
+    # pick the active vec/coef based on model used
+    if model_used.lower() == "malay" and _my_vectorizer is not None:
+        vec, coef = _my_vectorizer, _my_coef
+    else:
+        vec, coef = _en_vectorizer, _en_coef
+
+    # global/domain reason
+    reasons.append(f"Domain '{trust.get('domain')}' categorized as {trust.get('category')}.")
+
+    for ln in lines:
+        w_tfidf = _tfidf_line_score(ln, vec, coef)
+        w_heur = _line_heuristics(ln)
+        f_hits, r_hits = _kw_hits(ln)
+
+        kw_signal = 0.0
+        if f_hits: kw_signal -= 0.3 * len(f_hits)
+        if r_hits: kw_signal += 0.2 * len(r_hits)
+
+        total = w_tfidf + w_heur + kw_signal
+        tags = []
+        if f_hits: tags.append(f"Fake cues: {', '.join(f_hits)}")
+        if r_hits: tags.append(f"Real cues: {', '.join(r_hits)}")
+        if abs(w_tfidf) > 0.2: tags.append("Model-weighted term influence")
+
+        highlighted.append({"text": ln, "weight": total, "tags": tags})
+
+    highlighted.sort(key=lambda d: abs(d["weight"]), reverse=True)
+
+    if final_pred == "Fake":
+        reasons.append("Model detected sensational/biased tone and cues.")
+    else:
+        reasons.append("Model detected balanced/factual tone and cues.")
+
+    return highlighted[:50], reasons
 
 # ============================================================== #
 # AUTH HELPERS
@@ -272,6 +355,10 @@ def predict():
         heur = analyze_text_heuristics(text)
         trust = compute_trustability(url)
 
+        # choose model used for explanation
+        model_used = ml["model_used"]
+        lines, reasons = explain_text(text, trust, final_label, model_used)
+
         if username:
             with get_db_connection() as conn:
                 conn.execute("""
@@ -285,14 +372,15 @@ def predict():
             "headline": headline,
             "url": url,
             "language": ml["language"],
-            "model_used": ml["model_used"],
+            "model_used": model_used,
             "prediction": final_label,
             "confidence": ml["confidence"],
             "class_probs": ml["class_probs"],
             "heuristics": heur,
             "trustability": trust,
+            "explain": {"lines": lines, "reasons": reasons}  # <-- for popup if needed
         })
-    except Exception as e:
+    except Exception:
         logging.exception("Prediction error")
         return jsonify({"error": "Prediction failed"}), 500
 
@@ -324,15 +412,34 @@ def get_report(scan_id):
     username = verify_jwt(token)
     if not username:
         return "<h3>Unauthorized</h3>", 401
+
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT id, headline, url, text, prediction, confidence, heuristics, trustability, timestamp FROM scans WHERE id=? AND username=?", (scan_id, username))
+        cur.execute("""SELECT id, headline, url, text, prediction, confidence, heuristics, trustability, timestamp
+                       FROM scans WHERE id=? AND username=?""", (scan_id, username))
         row = cur.fetchone()
     if not row:
         return "<h3>Report not found.</h3>", 404
-    heur, trust = json.loads(row[6]), json.loads(row[7])
+
+    heur = json.loads(row[6])
+    trust = json.loads(row[7])
     label = "Fake" if row[4] == "0" else "Real"
-    return render_template("full-report.html", row=row, heur=heur, trust=trust, username=username)
+
+    # 🔄 Regenerate explanation on-the-fly so reports always have evidence
+    lang = detect_lang(row[3] or "")
+    load_models_if_needed("ms" if lang == "ms" else "en")
+    model_used = "Malay" if (lang == "ms" and _my_model and _my_vectorizer) else "English"
+    highlighted_lines, explain_reasons = explain_text(row[3] or "", trust, label, model_used)
+
+    return render_template(
+        "full-report.html",
+        row=row,
+        heur=heur,
+        trust=trust,
+        username=username,
+        highlighted_lines=highlighted_lines,
+        explain_reasons=explain_reasons,
+    )
 
 # ============================================================== #
 # MAIN
