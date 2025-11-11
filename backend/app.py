@@ -1,6 +1,6 @@
 # ==============================================================
 #  Fake News Detector 101 — Optimized Explainable AI API
-#  Version: Render-Ready (2025.11 FINAL)
+#  Version: Render-Ready (2025.11 FINAL - FIXED)
 #  Features: Dual EN/MY Models (Malay text only) + Auth + History + Explainability
 # ==============================================================
 
@@ -336,7 +336,7 @@ def login():
                        app.config["JWT_SECRET"], algorithm="HS256")
     return jsonify({"token": token, "username": username})
 
-# --- PREDICT ---
+# --- PREDICT (FIXED VERSION) ---
 @app.route("/predict", methods=["POST"])
 @limiter.limit(PREDICT_LIMIT)
 def predict():
@@ -349,13 +349,15 @@ def predict():
             return jsonify({"error": "Missing text"}), 400
 
         ml, _ = predict_fake_news(text)
+        ml = dict(ml)  # make a safe copy (avoid mutation of cached result)
         final_label = "Fake" if ml["prediction"] == "0" else "Real"
         heur = analyze_text_heuristics(text)
         trust = compute_trustability(url)
 
-        # Malaysia trust correction
+        # Malaysia trust correction (display-only)
+        corrected_conf = ml["confidence"]
         if trust["category"].startswith("Trusted (Malaysia)") and final_label == "Fake":
-            ml["confidence"] *= 0.6
+            corrected_conf *= 0.6
             final_label = "Likely Real"
 
         lines, reasons = explain_text(text, trust, final_label, ml["model_used"])
@@ -376,7 +378,7 @@ def predict():
             "language": ml["language"],
             "model_used": ml["model_used"],
             "prediction": final_label,
-            "confidence": ml["confidence"],
+            "confidence": corrected_conf,
             "class_probs": ml["class_probs"],
             "heuristics": heur,
             "trustability": trust,
