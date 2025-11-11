@@ -350,25 +350,33 @@
   </footer>
 
   <script>
-    document.addEventListener("DOMContentLoaded", () => {
-      const bar = document.querySelector(".confidence-fill");
-      if (bar) {
-        const finalWidth = bar.style.width;
-        bar.style.width = "0";
-        setTimeout(() => { bar.style.width = finalWidth; }, 200);
-      }
+  document.addEventListener("DOMContentLoaded", () => {
+    const bar = document.querySelector(".confidence-fill");
+    if (bar) {
+      const finalWidth = bar.style.width;
+      bar.style.width = "0";
+      setTimeout(() => { bar.style.width = finalWidth; }, 200);
+    }
 
-      const backBtn = document.getElementById("backBtn");
-      backBtn?.addEventListener("click", () => {
-        const articleUrl = "{{ row[2] }}";
-        if (articleUrl && articleUrl !== "—") {
-          window.open(articleUrl, "_blank");
-          setTimeout(() => window.close(), 600);
+    const backBtn = document.getElementById("backBtn");
+    backBtn?.addEventListener("click", () => {
+      const articleUrl = "{{ row[2] }}";
+
+      // ✅ Smooth fade out before redirect
+      document.body.style.transition = "opacity 0.4s ease";
+      document.body.style.opacity = "0";
+
+      setTimeout(() => {
+        if (articleUrl && articleUrl !== "—" && articleUrl.startsWith("http")) {
+          // 🔹 Redirect user to the same article (reuse current tab)
+          window.location.href = articleUrl;
         } else {
+          // 🔹 Fallback: go back to previous page
           window.history.back();
         }
-      });
+      }, 350);
     });
-  </script>
+  });
+</script>
 </body>
 </html>
