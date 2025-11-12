@@ -1,7 +1,7 @@
 # ============================================================
-# Fake News Detector 101 — Backend Requirements (Optimized)
+# Fake News Detector 101 — Backend Requirements (Finalized)
 # Version: November 2025
-# Environment: Render / Local (CPU Only, Multi-Language)
+# Environment: Render / Local (CPU-Optimized, Dual-Language)
 # ============================================================
 
 # ====== Core Framework ======
@@ -42,6 +42,10 @@ requests==2.32.3
 # ====== Rate Limiting & Security ======
 Flask-Limiter==3.8.0
 limits==3.13.0
+
+# ====== Database (SQLite & Concurrency) ======
+SQLAlchemy==2.0.36
+pysqlite3-binary==0.5.4  # for compatibility on some Render systems
 
 # ====== Logging, Debugging & Utilities ======
 colorama==0.4.6
