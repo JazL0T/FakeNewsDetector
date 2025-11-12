@@ -79,6 +79,32 @@ def auto_ping():
 # Start background thread
 threading.Thread(target=auto_ping, daemon=True).start()
 
+def log_status():
+    """Logs backend stats (users, scans, uptime, and model load) every 10 minutes."""
+    app_start = time.time()
+    while True:
+        try:
+            with get_db_connection() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT COUNT(*) FROM users")
+                users = cur.fetchone()[0]
+                cur.execute("SELECT COUNT(*) FROM scans")
+                scans = cur.fetchone()[0]
+
+            uptime = round(time.time() - app_start, 1)
+            status_summary = (
+                f"📊 STATUS — Users: {users} | Scans: {scans} | "
+                f"EN_Model: {'✅' if _en_model else '❌'} | "
+                f"MY_Model: {'✅' if _my_model else '❌'} | "
+                f"Uptime: {uptime:.0f}s"
+            )
+            logging.info(status_summary)
+
+        except Exception as e:
+            logging.warning(f"⚠️ Failed to log status: {e}")
+
+        time.sleep(600)  # every 10 minutes
+
 # ============================================================== #
 # RATE LIMITING
 # ============================================================== #
@@ -510,22 +536,40 @@ def health():
 
 @app.route("/status")
 def status():
-    with get_db_connection() as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM users")
-        users = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM scans")
-        scans = cur.fetchone()[0]
+    """Returns live API health and usage statistics."""
+    try:
+        # --- Collect counts from the database ---
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM users")
+            users = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM scans")
+            scans = cur.fetchone()[0]
 
-    return jsonify({
-        "users_registered": users,
-        "total_scans": scans,
-        "models_loaded": {
-            "english": _en_model is not None,
-            "malay": _my_model is not None
-        },
-        "rate_limit": PREDICT_LIMIT
-    })
+        # --- Calculate uptime (since app start) ---
+        uptime_seconds = round(time.time() - psutil.boot_time(), 1) if hasattr(__import__('psutil'), 'boot_time') else None
+
+        # --- Prepare the response ---
+        return jsonify({
+            "status": "ok",
+            "timestamp": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "users_registered": users,
+            "total_scans": scans,
+            "models_loaded": {
+                "english_model": bool(_en_model),
+                "malay_model": bool(_my_model)
+            },
+            "rate_limit": PREDICT_LIMIT,
+            "uptime_seconds": uptime_seconds,
+            "message": "✅ API is active and healthy"
+        }), 200
+
+    except Exception as e:
+        logging.exception("⚠️ Failed to retrieve status")
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
 
 @app.route("/")
 def home():
