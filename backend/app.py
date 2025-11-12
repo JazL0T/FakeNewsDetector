@@ -6,6 +6,8 @@
 
 import warnings
 warnings.filterwarnings("ignore", category=SyntaxWarning)
+from concurrent.futures import ThreadPoolExecutor
+executor = ThreadPoolExecutor(max_workers=4)
 
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
@@ -19,6 +21,7 @@ import tldextract
 from functools import lru_cache
 from flask_limiter import Limiter
 from langdetect import detect, LangDetectException
+from logging.handlers import RotatingFileHandler
 
 # ============================================================== #
 # CONFIGURATION
@@ -48,6 +51,13 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+# ✅ Rotating Log File (saves 3 backups, 2MB each)
+log_handler = RotatingFileHandler("app.log", maxBytes=2_000_000, backupCount=3)
+log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%Y-%m-%d %H:%M:%S")
+log_handler.setFormatter(log_formatter)
+app.logger.addHandler(log_handler)
+logging.getLogger().addHandler(log_handler)
 
 # ============================================================== #
 # RATE LIMITING
@@ -131,14 +141,23 @@ def init_db():
                 confidence REAL,
                 heuristics TEXT,
                 trustability TEXT,
+                language TEXT,
+                risk_level TEXT,
+                runtime REAL,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
         conn.commit()
 
 def get_db_connection():
+    """Optimized SQLite connection with better performance and safety."""
     conn = sqlite3.connect(app.config["DB_PATH"], timeout=10, check_same_thread=False)
-    conn.execute("PRAGMA busy_timeout=10000;")
+    conn.row_factory = sqlite3.Row  # ✅ Return dict-like rows instead of tuples
+    conn.execute("PRAGMA busy_timeout = 10000;")
+    conn.execute("PRAGMA cache_size = 10000;")
+    conn.execute("PRAGMA temp_store = MEMORY;")
+    conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA synchronous = NORMAL;")
     return conn
 
 init_db()
@@ -430,6 +449,20 @@ def explain_text(text: str, trust: dict, final_pred: str, model_used: str):
 
     return highlighted[:50], reasons
 
+def adjust_confidence(confidence: float, word_count: int) -> float:
+    """
+    Smooths out confidence scores:
+    - Reduces inflated confidence for short texts
+    - Slightly boosts confidence for long, consistent articles
+    """
+    if word_count < 150:
+        confidence *= 0.85
+    elif word_count > 1500:
+        confidence *= 1.05
+    return round(min(confidence, 0.99), 3)
+
+
+
 # ============================================================== #
 # AUTH HELPERS
 # ============================================================== #
@@ -505,7 +538,9 @@ def predict():
         url = data.get("url", "").strip()
 
         if not text:
-            return jsonify({"error": "Missing text"}), 400
+            return jsonify({"error": "Missing text"}), 400  # ✅ fixed indentation
+
+        start_time = time.time()  # ✅ moved correctly inside the function
 
         # ==============================================================
         # 🧠 MODEL PREDICTION
@@ -544,7 +579,7 @@ def predict():
         # ==============================================================
         # 🎚️ MALAY TRUST CORRECTION
         # ==============================================================
-        corrected_conf = ml["confidence"]
+        corrected_conf = adjust_confidence(ml["confidence"], article_stats["word_count"])
         final_label = base_label
         if trust["category"].startswith("Trusted (Malaysia)") and base_label == "Fake":
             corrected_conf *= 0.6
@@ -593,8 +628,9 @@ def predict():
         if username:
             with get_db_connection() as conn:
                 conn.execute("""
-                    INSERT INTO scans (username, headline, url, text, prediction, confidence, heuristics, trustability)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO scans (username, headline, url, text, prediction, confidence,
+                                       heuristics, trustability, language, risk_level, runtime)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     username,
                     headline,
@@ -603,7 +639,10 @@ def predict():
                     final_label,
                     corrected_conf,
                     json.dumps(heur),
-                    json.dumps(trust)
+                    json.dumps(trust),
+                    ml["language"],
+                    risk_level,
+                    round(time.time() - start_time, 2)
                 ))
                 conn.commit()
 
