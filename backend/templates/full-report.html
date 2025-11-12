@@ -323,7 +323,10 @@
         <div>Date:</div> <div>{{ row[8] }}</div>
         <div>Language:</div> <div><span class="badge info">{{ language }}</span></div>
         <div>Model Used:</div> <div><span class="badge info">{{ model_used }}</span></div>
+        <div>Chunks Analyzed:</div> 
+        <div><span class="badge info">{{ chunks_analyzed or 1 }}</span></div>
       </div>
+      
       <div class="confidence-value">
         Confidence:
         <b style="color:
