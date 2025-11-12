@@ -446,7 +446,7 @@ document.addEventListener("DOMContentLoaded", () => {
     setTimeout(() => { bar.style.width = finalWidth; }, 300);
   }
 
-  // 🧩 Create and style a temporary "Returning..." overlay
+  // 🧩 "Returning..." Overlay — now non-blocking until visible
   const overlay = document.createElement("div");
   overlay.id = "return-overlay";
   overlay.textContent = "Returning to article...";
@@ -463,28 +463,30 @@ document.addEventListener("DOMContentLoaded", () => {
     background: "rgba(13, 71, 161, 0.9)",
     zIndex: "9999",
     opacity: "0",
+    pointerEvents: "none", // ✅ makes page clickable & scrollable
     transition: "opacity 0.5s ease"
   });
   document.body.appendChild(overlay);
 
   const backBtn = document.getElementById("backBtn");
   backBtn?.addEventListener("click", () => {
-    // ✅ Safe fallback: always returns a valid string
     const articleUrl = {{ (row[2] or "") | tojson }};
-    overlay.style.opacity = "1"; // fade in overlay
+
+    // Enable interaction blocking only during fade-in
+    overlay.style.pointerEvents = "auto";
+    overlay.style.opacity = "1";
 
     setTimeout(() => {
       if (document.referrer && document.referrer.startsWith("http")) {
-        window.location.href = document.referrer; // 🧠 Return to previous article
+        window.location.href = document.referrer;
       } else if (articleUrl && articleUrl.startsWith("http")) {
-        window.location.replace(articleUrl); // 🌐 Fallback to stored URL
+        window.location.replace(articleUrl);
       } else {
-        window.location.href = "/"; // ⏪ Ultimate fallback (homepage)
+        window.location.href = "/";
       }
     }, 600);
   });
 });
 </script>
-
 </body>
 </html>
