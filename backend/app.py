@@ -190,14 +190,88 @@ def _cached_predict(lang: str, clean_text_hash: str, original_text: str):
     }
 
 def predict_fake_news(text: str):
+    """
+    Predict fake vs real news — supports long articles and caching for short ones.
+    """
     if not text.strip():
         return {"error": "Empty text"}
+
     lang = detect_lang(text)
-    text_hash = hashlib.sha256(tokenize_text(text).encode()).hexdigest()
-    res = _cached_predict(lang, text_hash, text)
-    res["language"] = "Malay" if lang == "ms" else "English"
-    logging.info(f"🧠 Detected language from text → {res['language']}")
-    return res, (lang == "ms" and _my_model and _my_vectorizer)
+    load_models_if_needed(lang)
+    model, vec, coef, used = (
+        (_my_model, _my_vectorizer, _my_coef, "Malay")
+        if lang == "ms" and _my_model and _my_vectorizer
+        else (_en_model, _en_vectorizer, _en_coef, "English")
+    )
+
+    # 🔹 Hash for caching if text is short
+    clean_text = tokenize_text(text)
+    text_hash = hashlib.sha256(clean_text.encode()).hexdigest()
+
+    # 🔹 If short text (<700 words) → use cache
+    word_count = len(clean_text.split())
+    if word_count < 700:
+        res = _cached_predict(lang, text_hash, text)
+        res["language"] = "Malay" if lang == "ms" else "English"
+        logging.info(f"🧠 Cached prediction used for short text ({word_count} words)")
+        return res, (lang == "ms" and _my_model and _my_vectorizer)
+
+    # 🔹 Otherwise → use chunk-based analysis for long articles
+    def chunk_text(text, max_words=700):
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        chunks, current, word_count = [], [], 0
+        for sent in sentences:
+            w = len(sent.split())
+            if word_count + w > max_words and current:
+                chunks.append(" ".join(current))
+                current, word_count = [sent], w
+            else:
+                current.append(sent)
+                word_count += w
+        if current:
+            chunks.append(" ".join(current))
+        return chunks
+
+    chunks = chunk_text(text)
+    chunk_preds, chunk_probs = [], []
+
+    for chunk in chunks:
+        try:
+            features = vec.transform([chunk])
+            pred = model.predict(features)[0]
+            probs = (
+                model.predict_proba(features)[0]
+                if hasattr(model, "predict_proba")
+                else [0.5, 0.5]
+            )
+            chunk_preds.append(pred)
+            chunk_probs.append(probs)
+        except Exception as e:
+            logging.warning(f"⚠️ Chunk skipped: {e}")
+
+    if not chunk_preds:
+        return {"error": "No valid text processed"}
+
+    avg_probs = [
+        sum(p[i] for p in chunk_probs) / len(chunk_probs)
+        for i in range(2)
+    ]
+    avg_conf = float(max(avg_probs))
+    final_pred = int(avg_probs[1] > avg_probs[0])
+
+    result = {
+        "prediction": str(final_pred),
+        "confidence": avg_conf,
+        "class_probs": {"0": float(avg_probs[0]), "1": float(avg_probs[1])},
+        "model_used": used,
+        "coef_vector": coef,
+        "language": "Malay" if lang == "ms" else "English",
+        "chunks_analyzed": len(chunks)
+    }
+
+    logging.info(f"🧠 Detected {result['language']} | {len(chunks)} chunks processed | {word_count} words")
+
+    return result, (lang == "ms" and _my_model and _my_vectorizer)
 
 def analyze_text_heuristics(text: str) -> dict:
     blob = TextBlob(text)
