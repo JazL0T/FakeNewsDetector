@@ -292,30 +292,92 @@ def predict_fake_news(text: str, url: str = ""):
     if not text.strip():
         return {"error": "Empty text"}
 
-    # --- Language detection with URL awareness ---
+    # --- Smart language detection (aware of domain + content) ---
     lang = safe_detect_language(text, url)
     logging.info(f"[LangDetect] {url} → {lang}")
 
-    # --- Load models based on language ---
-    if lang.lower().startswith("malay") or lang.lower() == "ms":
+    # --- Load correct model based on detected language ---
+    if lang == "Malay":
         load_models_if_needed("ms")
         model, vec, coef, used = _my_model, _my_vectorizer, _my_coef, "Malay"
     else:
         load_models_if_needed("en")
         model, vec, coef, used = _en_model, _en_vectorizer, _en_coef, "English"
 
-    # --- Prepare text and hash for caching ---
+    # --- Prepare text and cache hash ---
     clean_text = tokenize_text(text)
     text_hash = hashlib.sha256(clean_text.encode()).hexdigest()
     word_count = len(clean_text.split())
 
-    # --- Short text optimization ---
+    # --- For short text (<700 words): use cache for speed ---
     if word_count < 700:
         res = _cached_predict("ms" if used == "Malay" else "en", text_hash, text)
         res["language"] = lang
         res["chunks_analyzed"] = 1
         logging.info(f"🧠 Cached prediction used for short text ({word_count} words) → {used}")
         return res, (used == "Malay")
+
+    # --- For long text: split and analyze in chunks ---
+    def chunk_text(text, max_words=700):
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        chunks, current, word_count = [], [], 0
+        for sent in sentences:
+            w = len(sent.split())
+            if word_count + w > max_words and current:
+                chunks.append(" ".join(current))
+                current, word_count = [sent], w
+            else:
+                current.append(sent)
+                word_count += w
+        if current:
+            chunks.append(" ".join(current))
+        return chunks
+
+    chunks = chunk_text(text)
+    chunk_preds, chunk_probs = [], []
+
+    # --- Evaluate each chunk ---
+    for chunk in chunks:
+        try:
+            features = vec.transform([chunk])
+            pred = model.predict(features)[0]
+            probs = (
+                model.predict_proba(features)[0]
+                if hasattr(model, "predict_proba")
+                else [0.5, 0.5]
+            )
+            chunk_preds.append(pred)
+            chunk_probs.append(probs)
+        except Exception as e:
+            logging.warning(f"⚠️ Chunk skipped: {e}")
+
+    # --- Aggregate results ---
+    if not chunk_preds:
+        return {"error": "No valid text processed"}
+
+    avg_probs = [
+        sum(p[i] for p in chunk_probs) / len(chunk_probs)
+        for i in range(2)
+    ]
+    avg_conf = float(max(avg_probs))
+    final_pred = int(avg_probs[1] > avg_probs[0])
+
+    result = {
+        "prediction": str(final_pred),
+        "confidence": avg_conf,
+        "class_probs": {"0": float(avg_probs[0]), "1": float(avg_probs[1])},
+        "model_used": used,
+        "coef_vector": coef,
+        "language": lang,
+        "chunks_analyzed": len(chunks),
+    }
+
+    logging.info(
+        f"🧠 Long article detected ({word_count} words) | "
+        f"{len(chunks)} chunks analyzed | Model: {used} | Language: {lang}"
+    )
+
+    return result, (used == "Malay")
 
     # --- Long text: split into manageable chunks ---
     def chunk_text(text, max_words=700):
@@ -656,23 +718,42 @@ def adjust_confidence(confidence: float, word_count: int) -> float:
     return round(min(confidence, 0.99), 3)
 
 def safe_detect_language(text, url=""):
+    """
+    Detects language for the article and ensures correct model mapping.
+    - Malay text or Indonesian language → 'Malay'
+    - English text → 'English'
+    - Mixed or uncertain → fallback to 'English'
+    """
     try:
         langs = detect_langs(text)
         top = langs[0]
         lang = top.lang
 
-        # fallback for short or uncertain text
-        if top.prob < 0.8 or len(text) < 300:
-            lang = "en"
+        # --- Detect true text language ---
+        if lang in ["ms", "id"]:
+            detected_lang = "Malay"
+        elif lang == "en":
+            detected_lang = "English"
+        else:
+            detected_lang = "English"  # default fallback
 
-        # trusted English media always English
-        trusted_en = ["bbc.com", "cnn.com", "nytimes.com", "reuters.com", "theguardian.com"]
-        if any(d in url for d in trusted_en):
-            lang = "en"
+        # --- Override based on domain for Malaysian sites ---
+        malaysian_domains = [
+            "astroawani", "bernama", "freemalaysiatoday",
+            "malaymail", "thestar", "nst", "utusan", "theborneopost"
+        ]
 
-        # readable names for frontend
-        mapping = {"en": "English", "ms": "Malay", "id": "Indonesian"}
-        return mapping.get(lang, "English")
+        # --- Check if the URL belongs to a Malaysian outlet ---
+        if any(site in url.lower() for site in malaysian_domains):
+            # ✅ If it's a Malaysian site but text looks English, keep English model
+            # ✅ If it's Malay text, use Malay model
+            if detected_lang == "Malay":
+                return "Malay"
+            else:
+                return "English"
+
+        # --- Default for other international or unknown sources ---
+        return detected_lang
 
     except Exception as e:
         print(f"[LangDetect Error] {e}")
