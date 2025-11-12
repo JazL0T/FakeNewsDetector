@@ -22,6 +22,7 @@ from functools import lru_cache
 from flask_limiter import Limiter
 from langdetect import detect, LangDetectException
 from logging.handlers import RotatingFileHandler
+import threading, requests
 
 # ============================================================== #
 # CONFIGURATION
@@ -58,6 +59,25 @@ log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%Y
 log_handler.setFormatter(log_formatter)
 app.logger.addHandler(log_handler)
 logging.getLogger().addHandler(log_handler)
+
+# ============================================================== #
+# AUTO PING
+# ============================================================== #
+
+def auto_ping():
+    """Keeps the app alive by pinging itself every 5 minutes."""
+    while True:
+        try:
+            url = os.getenv("RENDER_EXTERNAL_URL", "")
+            if url:
+                requests.get(f"{url}/health", timeout=10)
+                logging.info("🌐 Self-ping successful")
+        except Exception as e:
+            logging.warning(f"⚠️ Self-ping failed: {e}")
+        time.sleep(300)  # every 5 minutes
+
+# Start background thread
+threading.Thread(target=auto_ping, daemon=True).start()
 
 # ============================================================== #
 # RATE LIMITING
@@ -480,7 +500,32 @@ def safe_json(data):
 # ============================================================== #
 @app.route("/health")
 def health():
-    return "OK", 200
+    utc_now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S UTC")
+    logging.info(f"🩺 Health check at {utc_now}")
+    return jsonify({
+        "status": "ok",
+        "timestamp": utc_now,
+        "version": "2025.11-FINAL"
+    }), 200
+
+@app.route("/status")
+def status():
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM users")
+        users = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM scans")
+        scans = cur.fetchone()[0]
+
+    return jsonify({
+        "users_registered": users,
+        "total_scans": scans,
+        "models_loaded": {
+            "english": _en_model is not None,
+            "malay": _my_model is not None
+        },
+        "rate_limit": PREDICT_LIMIT
+    })
 
 @app.route("/")
 def home():
