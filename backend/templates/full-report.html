@@ -397,18 +397,41 @@
       setTimeout(() => { bar.style.width = finalWidth; }, 300);
     }
 
+    // 🧩 Create and style a temporary "Returning..." overlay
+    const overlay = document.createElement("div");
+    overlay.id = "return-overlay";
+    overlay.textContent = "Returning to article...";
+    Object.assign(overlay.style, {
+      position: "fixed",
+      inset: "0",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontFamily: "'Poppins', sans-serif",
+      fontSize: "20px",
+      fontWeight: "600",
+      color: "#fff",
+      background: "rgba(13, 71, 161, 0.9)",
+      zIndex: "9999",
+      opacity: "0",
+      transition: "opacity 0.5s ease"
+    });
+    document.body.appendChild(overlay);
+
     const backBtn = document.getElementById("backBtn");
     backBtn?.addEventListener("click", () => {
       const articleUrl = {{ row[2] | tojson }};
-      document.body.style.transition = "opacity 0.4s ease";
-      document.body.style.opacity = "0";
+      overlay.style.opacity = "1"; // fade in overlay
+
       setTimeout(() => {
-        if (articleUrl && articleUrl !== "—" && articleUrl.startsWith("http")) {
-          window.location.replace(articleUrl);  // ✅ FIXED LINE
+        if (document.referrer && document.referrer.startsWith("http")) {
+          window.location.href = document.referrer;     // 🧠 Go back to same tab source
+        } else if (articleUrl && articleUrl.startsWith("http")) {
+          window.location.replace(articleUrl);          // 🌐 Fallback to stored URL
         } else {
-          window.history.back();
+          window.history.back();                        // ⏪ Safe fallback
         }
-      }, 350);
+      }, 600); // short delay for UX
     });
   });
 </script>
