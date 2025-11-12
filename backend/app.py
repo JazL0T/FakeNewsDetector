@@ -4,6 +4,15 @@
 #  Features: Dual EN/MY Models (Malay text only) + Auth + History + Explainability
 # ==============================================================
 
+# ==============================================================
+#  Gevent Compatibility Patch (must be FIRST)
+# ==============================================================
+try:
+    from gevent import monkey
+    monkey.patch_all()
+except Exception:
+    pass
+
 import warnings
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 from concurrent.futures import ThreadPoolExecutor
@@ -18,6 +27,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from textblob import TextBlob
 from dotenv import load_dotenv
 import tldextract
+_TLD_EXTRACTOR = tldextract.TLDExtract(suffix_list_urls=None)
 from functools import lru_cache
 from flask_limiter import Limiter
 from langdetect import detect, LangDetectException
@@ -391,14 +401,50 @@ def get_top_keywords(vectorizer, coef_vector, text, top_n=10):
 # ============================================================== #
 @lru_cache(maxsize=400)
 def compute_trustability(url: str) -> dict:
-    domain = tldextract.extract(url).registered_domain or "unknown"
-    trusted_my = [
-        "thestar.com.my","malaymail.com","bernama.com","astroawani.com",
-        "freemalaysiatoday.com","theedgemalaysia.com","theborneopost.com","themalaysianreserve.com"
-    ]
-    trusted_global = ["bbc.com","reuters.com","cnn.com","nytimes.com","bloomberg.com","apnews.com"]
-    suspicious = ["clickbait","rumor","wordpress","blogspot","infowars.com","breitbart.com"]
+    """
+    Determines the trust category of a given URL domain.
+    Uses offline suffix extraction to avoid SSL recursion errors on Render.
+    """
+    try:
+        # Use offline mode for tldextract (prevents network call issues)
+        if not url or not isinstance(url, str):
+            domain = "unknown"
+        else:
+            # ✅ Use the global offline extractor defined at startup
+            domain = _TLD_EXTRACTOR(url).registered_domain or "unknown"
+    except Exception as e:
+        logging.warning(f"⚠️ Domain extraction failed for '{url}': {e}")
+        domain = "unknown"
 
+    # --- Domain trust lists ---
+    trusted_my = [
+    # 🇲🇾 Malaysian mainstream & official outlets
+    "thestar.com.my", "malaymail.com", "bernama.com", "astroawani.com",
+    "freemalaysiatoday.com", "theedgemalaysia.com", "theborneopost.com",
+    "themalaysianreserve.com", "nst.com.my", "utusan.com.my", "malaysiakini.com",
+    "dailyexpress.com.my", "sinarharian.com.my", "kosmo.com.my", "harakahdaily.net"
+]
+
+trusted_global = [
+    # 🌍 Internationally recognized mainstream outlets
+    "bbc.com", "reuters.com", "cnn.com", "nytimes.com", "bloomberg.com",
+    "apnews.com", "theguardian.com", "washingtonpost.com", "npr.org",
+    "aljazeera.com", "cnbc.com", "forbes.com", "time.com", "dw.com",
+    "economist.com", "abcnews.go.com", "usatoday.com", "sky.com", "pbs.org",
+    "politico.com", "financialtimes.com", "thehill.com", "vox.com", "boston.com"
+]
+
+suspicious = [
+    # ⚠️ Common misinformation or low-credibility sources
+    "clickbait", "rumor", "wordpress", "blogspot", "medium.com", "substack.com",
+    "infowars.com", "breitbart.com", "naturalnews.com", "thegatewaypundit.com",
+    "sputniknews.com", "rt.com", "zerohedge.com", "newsmax.com", "oan.com",
+    "beforeitsnews.com", "dailyexpose.uk", "worldtruth.tv", "newspunch.com",
+    "yournewswire.com", "patriotpost.us", "theblaze.com", "rumble.com",
+    "bitchute.com", "truthsocial.com", "gab.com", "duckduckgo.com/news"
+]
+
+    # --- Categorize based on match ---
     if any(t in domain for t in trusted_my):
         return {"domain": domain, "trust_score": 90, "category": "Trusted (Malaysia)"}
     if any(t in domain for t in trusted_global):
@@ -929,6 +975,7 @@ def get_report(scan_id):
 # MAIN
 # ============================================================== #
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 5000))
-    logging.info(f"🚀 Running locally on http://0.0.0.0:{port}")
+    port = int(os.environ.get("PORT", 10000))  # ✅ Render sets this automatically
+    logging.info(f"🚀 Starting server on port {port}")
     app.run(host="0.0.0.0", port=port, debug=False)
+
