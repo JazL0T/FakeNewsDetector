@@ -1,6 +1,5 @@
 # ============================================================
-# Fake News Detector 101 — Backend Requirements (Finalized)
-# Version: November 2025
+# Fake News Detector 101 — Backend Requirements (Finalized 2025.11)
 # Environment: Render / Local (CPU-Optimized, Dual-Language)
 # ============================================================
 
@@ -16,6 +15,7 @@ MarkupSafe==3.0.3
 
 # ====== Production Server ======
 gunicorn==23.0.0
+gevent==24.10.3  # ✅ optional async worker for better Render performance
 
 # ====== Machine Learning (Lightweight, CPU Optimized) ======
 joblib==1.5.2
@@ -45,7 +45,8 @@ limits==3.13.0
 
 # ====== Database (SQLite & Concurrency) ======
 SQLAlchemy==2.0.36
-pysqlite3-binary==0.5.4  # for compatibility on some Render systems
+pysqlite3-binary==0.5.4  # ✅ compatibility on some Render systems
 
 # ====== Logging, Debugging & Utilities ======
 colorama==0.4.6
+humanfriendly==10.0  # ✅ optional: for readable runtime logs like "3.2s" or "5 minutes"
