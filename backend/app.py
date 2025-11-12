@@ -684,10 +684,14 @@ def get_report(scan_id):
     sentence_count = len([s for s in sentences if s.strip()])
     avg_sentence_len = round(word_count / max(sentence_count, 1), 2)
 
+    # ✅ Estimate chunks analyzed (assuming ~1500 words per chunk)
+    chunks_analyzed = max(1, math.ceil(word_count / 1500))
+
     article_stats = {
         "word_count": word_count,
         "sentence_count": sentence_count,
         "avg_sentence_len": avg_sentence_len,
+        "chunks_analyzed": chunks_analyzed
     }
 
     # ==============================================================
@@ -753,7 +757,8 @@ def get_report(scan_id):
         sentiment_label=sentiment_label,
         risk_level=risk_level,
         article_stats=article_stats,
-        top_keywords=top_keywords
+        top_keywords=top_keywords,
+        chunks_analyzed=chunks_analyzed  # ✅ Correct, self-contained computation
     )
 
 # ============================================================== #
