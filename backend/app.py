@@ -847,7 +847,7 @@ def predict():
             "username": username or "Guest",
             "headline": headline,
             "url": url,
-            "language": ml["language"],
+            "language": safe_detect_language(text, url),
             "model_used": ml["model_used"],
             "prediction": final_label,
             "confidence": corrected_conf,
