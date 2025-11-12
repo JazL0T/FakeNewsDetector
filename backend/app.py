@@ -27,6 +27,9 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from textblob import TextBlob
 from dotenv import load_dotenv
 
+from langdetect import detect_langs, DetectorFactory
+DetectorFactory.seed = 0 
+
 import tldextract
 # ============================================================== #
 # TLDExtract (Offline Mode - Prevent SSL Recursion)
@@ -587,7 +590,28 @@ def adjust_confidence(confidence: float, word_count: int) -> float:
         confidence *= 1.05
     return round(min(confidence, 0.99), 3)
 
+def safe_detect_language(text, url=""):
+    try:
+        langs = detect_langs(text)
+        top = langs[0]
+        lang = top.lang
 
+        # fallback for short or uncertain text
+        if top.prob < 0.8 or len(text) < 300:
+            lang = "en"
+
+        # trusted English media always English
+        trusted_en = ["bbc.com", "cnn.com", "nytimes.com", "reuters.com", "theguardian.com"]
+        if any(d in url for d in trusted_en):
+            lang = "en"
+
+        # readable names for frontend
+        mapping = {"en": "English", "ms": "Malay", "id": "Indonesian"}
+        return mapping.get(lang, "English")
+
+    except Exception as e:
+        print(f"[LangDetect Error] {e}")
+        return "English"
 
 # ============================================================== #
 # AUTH HELPERS
