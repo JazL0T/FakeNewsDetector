@@ -404,7 +404,7 @@
       document.body.style.opacity = "0";
       setTimeout(() => {
         if (articleUrl && articleUrl !== "—" && articleUrl.startsWith("http")) {
-          window.location.replace = articleUrl;
+          window.location.replace(articleUrl);  // ✅ FIXED LINE
         } else {
           window.history.back();
         }
