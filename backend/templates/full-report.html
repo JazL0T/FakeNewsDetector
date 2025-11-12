@@ -377,18 +377,60 @@
 </div>
 
     <div class="card">
-      <h2><span></span> Source Trust Analysis</h2>
-      <div class="keyval">
-        <div>Domain:</div> <div>{{ trust.domain }}</div>
-        <div>Trust Score:</div> <div><b>{{ trust.trust_score }}</b></div>
-        <div>Category:</div> 
-        <div><span class="badge {% if trust.category.startswith('Trusted') %}real{% elif trust.category == 'Suspicious' %}fake{% else %}uncertain{% endif %}">
-          {{ trust.category }}
-        </span></div>
-      </div>
+  <h2><span></span> Source Trust Analysis</h2>
+  <div class="keyval">
+    <div>Domain:</div> <div>{{ trust.domain }}</div>
+    <div>Trust Score:</div> <div><b>{{ trust.trust_score }}</b></div>
+    <div>Category:</div> 
+    <div><span class="badge {% if trust.category.startswith('Trusted') %}real{% elif trust.category == 'Suspicious' %}fake{% else %}uncertain{% endif %}">
+      {{ trust.category }}
+    </span></div>
+  </div>
+</div>
+
+<!-- 🧠 NEW: Article Insights Section -->
+<div class="card">
+  <h2><span></span> Article Insights</h2>
+  <div class="keyval">
+    <div>Risk Level:</div>
+    <div>
+      <span class="badge 
+        {% if risk_level == 'High' %}fake
+        {% elif risk_level == 'Medium' %}uncertain
+        {% else %}real{% endif %}">
+        {{ risk_level }}
+      </span>
     </div>
 
-    <button class="back-btn" id="backBtn">⬅ Back to Article</button>
+    <div>Word Count:</div> <div>{{ article_stats.word_count }}</div>
+    <div>Sentences:</div> <div>{{ article_stats.sentence_count }}</div>
+    <div>Avg. Sentence Length:</div> <div>{{ article_stats.avg_sentence_len }}</div>
+  </div>
+
+  {% if top_keywords %}
+  <div style="margin-top:14px;">
+    <b>Top Keywords:</b>
+    <div style="margin-top:8px;">
+      {% for kw in top_keywords %}
+        <span style="
+          display:inline-block;
+          background:#e3f2fd;
+          color:#0d47a1;
+          font-weight:600;
+          font-size:13px;
+          border-radius:8px;
+          padding:4px 10px;
+          margin:3px;
+        ">
+          {{ kw }}
+        </span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<button class="back-btn" id="backBtn">⬅ Back to Article</button>
   </main>
 
   <footer>
