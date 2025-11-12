@@ -26,8 +26,24 @@ import jwt
 from werkzeug.security import generate_password_hash, check_password_hash
 from textblob import TextBlob
 from dotenv import load_dotenv
+
 import tldextract
-_TLD_EXTRACTOR = tldextract.TLDExtract(suffix_list_urls=None)
+# ============================================================== #
+# TLDExtract (Offline Mode - Prevent SSL Recursion)
+# ============================================================== #
+_TLD_EXTRACTOR = tldextract.TLDExtract(
+    cache_dir="/tmp/tldextract_cache",  # ✅ Safe writable cache dir on Render
+    suffix_list_urls=None,              # ✅ Fully offline (no HTTPS requests)
+    fallback_to_snapshot=True           # ✅ Uses built-in snapshot of domain suffixes
+)
+
+# ✅ Optional sanity check (helps verify on first deploy)
+try:
+    test_domain = _TLD_EXTRACTOR("https://www.bbc.com").registered_domain
+    logging.info(f"🧩 TLD extractor initialized successfully (test: {test_domain})")
+except Exception as e:
+    logging.warning(f"⚠️ TLD extractor init failed: {e}")
+
 from functools import lru_cache
 from flask_limiter import Limiter
 from langdetect import detect, LangDetectException
