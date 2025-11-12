@@ -9,7 +9,7 @@ warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
-import joblib, re, os, sqlite3, logging, json, time, threading, hashlib
+import joblib, re, os, sqlite3, logging, json, time, threading, hashlib, math  # ✅ Added math here
 from datetime import datetime, timedelta
 import jwt
 from werkzeug.security import generate_password_hash, check_password_hash
