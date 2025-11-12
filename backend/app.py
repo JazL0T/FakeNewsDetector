@@ -403,48 +403,64 @@ def get_top_keywords(vectorizer, coef_vector, text, top_n=10):
 def compute_trustability(url: str) -> dict:
     """
     Determines the trust category of a given URL domain.
-    Uses offline suffix extraction to avoid SSL recursion errors on Render.
+    - Uses offline suffix extraction to avoid SSL recursion errors on Render.
+    - Normalizes malformed URLs like 'cnn.com' or 'www.reuters.com'.
+    - Returns structured metadata (domain, score, category).
     """
+
     try:
-        # Use offline mode for tldextract (prevents network call issues)
+        # 🧹 Normalize URL before extraction
         if not url or not isinstance(url, str):
             domain = "unknown"
         else:
-            # ✅ Use the global offline extractor defined at startup
-            domain = _TLD_EXTRACTOR(url).registered_domain or "unknown"
+            clean_url = url.strip()
+            # Ensure URL has a valid scheme (Render-safe)
+            if not re.match(r"^https?://", clean_url):
+                clean_url = "https://" + clean_url
+            # ✅ Use preloaded offline extractor (no external requests)
+            domain = _TLD_EXTRACTOR(clean_url).registered_domain or "unknown"
     except Exception as e:
         logging.warning(f"⚠️ Domain extraction failed for '{url}': {e}")
         domain = "unknown"
 
-    # --- Domain trust lists ---
+    # --- TRUSTED SOURCES ---
     trusted_my = [
-    # 🇲🇾 Malaysian mainstream & official outlets
-    "thestar.com.my", "malaymail.com", "bernama.com", "astroawani.com",
-    "freemalaysiatoday.com", "theedgemalaysia.com", "theborneopost.com",
-    "themalaysianreserve.com", "nst.com.my", "utusan.com.my", "malaysiakini.com",
-    "dailyexpress.com.my", "sinarharian.com.my", "kosmo.com.my", "harakahdaily.net"
-]
+        # 🇲🇾 Malaysian mainstream & official outlets
+        "thestar.com.my", "malaymail.com", "bernama.com", "astroawani.com",
+        "freemalaysiatoday.com", "theedgemalaysia.com", "theborneopost.com",
+        "themalaysianreserve.com", "nst.com.my", "utusan.com.my", "malaysiakini.com",
+        "dailyexpress.com.my", "sinarharian.com.my", "kosmo.com.my", "harakahdaily.net"
+    ]
 
-trusted_global = [
-    # 🌍 Internationally recognized mainstream outlets
-    "bbc.com", "reuters.com", "cnn.com", "nytimes.com", "bloomberg.com",
-    "apnews.com", "theguardian.com", "washingtonpost.com", "npr.org",
-    "aljazeera.com", "cnbc.com", "forbes.com", "time.com", "dw.com",
-    "economist.com", "abcnews.go.com", "usatoday.com", "sky.com", "pbs.org",
-    "politico.com", "financialtimes.com", "thehill.com", "vox.com", "boston.com"
-]
+    trusted_global = [
+        # 🌍 Major international outlets
+        "bbc.com", "reuters.com", "cnn.com", "nytimes.com", "bloomberg.com",
+        "apnews.com", "theguardian.com", "washingtonpost.com", "npr.org",
+        "aljazeera.com", "cnbc.com", "forbes.com", "time.com", "dw.com",
+        "economist.com", "abcnews.go.com", "usatoday.com", "sky.com", "pbs.org",
+        "politico.com", "financialtimes.com", "thehill.com", "vox.com", "boston.com"
+    ]
 
-suspicious = [
-    # ⚠️ Common misinformation or low-credibility sources
-    "clickbait", "rumor", "wordpress", "blogspot", "medium.com", "substack.com",
-    "infowars.com", "breitbart.com", "naturalnews.com", "thegatewaypundit.com",
-    "sputniknews.com", "rt.com", "zerohedge.com", "newsmax.com", "oan.com",
-    "beforeitsnews.com", "dailyexpose.uk", "worldtruth.tv", "newspunch.com",
-    "yournewswire.com", "patriotpost.us", "theblaze.com", "rumble.com",
-    "bitchute.com", "truthsocial.com", "gab.com", "duckduckgo.com/news"
-]
+    fact_checkers = [
+        # ✅ Verified fact-checking organizations
+        "politifact.com", "snopes.com", "factcheck.org", "afp.com", "afpfactcheck.com",
+        "boomlive.in", "malaysiakini.com/factcheck", "thescoop.co", "factly.in",
+        "reuters.com/fact-check", "apnews.com/fact-check"
+    ]
 
-    # --- Categorize based on match ---
+    suspicious = [
+        # ⚠️ Common misinformation / low-credibility domains
+        "clickbait", "rumor", "wordpress", "blogspot", "medium.com", "substack.com",
+        "infowars.com", "breitbart.com", "naturalnews.com", "thegatewaypundit.com",
+        "sputniknews.com", "rt.com", "zerohedge.com", "newsmax.com", "oan.com",
+        "beforeitsnews.com", "dailyexpose.uk", "worldtruth.tv", "newspunch.com",
+        "yournewswire.com", "patriotpost.us", "theblaze.com", "rumble.com",
+        "bitchute.com", "truthsocial.com", "gab.com", "duckduckgo.com/news"
+    ]
+
+    # --- CLASSIFY DOMAIN ---
+    if any(fc in domain for fc in fact_checkers):
+        return {"domain": domain, "trust_score": 95, "category": "Verified Fact-Checker"}
     if any(t in domain for t in trusted_my):
         return {"domain": domain, "trust_score": 90, "category": "Trusted (Malaysia)"}
     if any(t in domain for t in trusted_global):
@@ -453,6 +469,8 @@ suspicious = [
         return {"domain": domain, "trust_score": 30, "category": "Suspicious"}
     if ".my" in domain:
         return {"domain": domain, "trust_score": 60, "category": "Unverified Malaysian Source"}
+
+    # --- Default fallback ---
     return {"domain": domain, "trust_score": 50, "category": "Uncertain"}
 
 # ============================================================== #
