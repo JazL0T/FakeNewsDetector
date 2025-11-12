@@ -209,6 +209,36 @@ def analyze_text_heuristics(text: str) -> dict:
     return {"sentiment": sentiment, "uppercase_ratio": upper_ratio, "exclamations": exclamations, "fake_score": fake_score}
 
 # ============================================================== #
+# TEXT ANALYTICS & FEATURE INSIGHTS
+# ============================================================== #
+def extract_text_stats(text: str) -> dict:
+    """Compute basic statistics about the text for reporting."""
+    sentences = re.split(r'[.!?]', text)
+    words = re.findall(r'\b\w+\b', text)
+    word_count = len(words)
+    sent_count = len([s for s in sentences if len(s.strip()) > 0])
+    avg_sentence_len = round(word_count / max(sent_count, 1), 2)
+    return {
+        "word_count": word_count,
+        "sentence_count": sent_count,
+        "avg_sentence_len": avg_sentence_len
+    }
+
+def get_top_keywords(vectorizer, coef_vector, text, top_n=10):
+    """Get top influential words for explainability."""
+    if coef_vector is None or not hasattr(vectorizer, "vocabulary_"):
+        return []
+    tfidf = vectorizer.transform([text])
+    feature_names = vectorizer.get_feature_names_out()
+    scores = (tfidf.toarray()[0] * coef_vector)
+    ranked = sorted(
+        [(feature_names[i], scores[i]) for i in range(len(feature_names)) if scores[i] != 0],
+        key=lambda x: abs(x[1]),
+        reverse=True
+    )
+    return [w for w, _ in ranked[:top_n]]
+
+# ============================================================== #
 # TRUSTABILITY
 # ============================================================== #
 @lru_cache(maxsize=400)
@@ -336,7 +366,7 @@ def login():
                        app.config["JWT_SECRET"], algorithm="HS256")
     return jsonify({"token": token, "username": username})
 
-# --- PREDICT (CONSISTENT VERSION) ---
+# --- PREDICT (ENHANCED VERSION) ---
 @app.route("/predict", methods=["POST"])
 @limiter.limit(PREDICT_LIMIT)
 def predict():
@@ -362,7 +392,7 @@ def predict():
         # 🧠 MODEL PREDICTION
         # ==============================================================
         ml, _ = predict_fake_news(text)
-        ml = dict(ml)  # make a safe copy (avoid mutation)
+        ml = dict(ml)
         base_label = "Fake" if ml["prediction"] == "0" else "Real"
 
         # ==============================================================
@@ -372,11 +402,31 @@ def predict():
         trust = compute_trustability(url)
 
         # ==============================================================
+        # 📊 ADDITIONAL TEXT ANALYSIS
+        # ==============================================================
+        sentences = re.split(r"[.!?]", text)
+        words = re.findall(r"\b\w+\b", text)
+        word_count = len(words)
+        sentence_count = len([s for s in sentences if s.strip()])
+        avg_sentence_len = round(word_count / max(sentence_count, 1), 2)
+
+        article_stats = {
+            "word_count": word_count,
+            "sentence_count": sentence_count,
+            "avg_sentence_len": avg_sentence_len,
+        }
+
+        sentiment_label = (
+            "Positive" if heur["sentiment"] > 0.25 else
+            "Negative" if heur["sentiment"] < -0.25 else
+            "Neutral"
+        )
+
+        # ==============================================================
         # 🎚️ MALAY TRUST CORRECTION
         # ==============================================================
         corrected_conf = ml["confidence"]
         final_label = base_label
-
         if trust["category"].startswith("Trusted (Malaysia)") and base_label == "Fake":
             corrected_conf *= 0.6
             final_label = "Likely Real"
@@ -387,7 +437,39 @@ def predict():
         lines, reasons = explain_text(text, trust, final_label, ml["model_used"])
 
         # ==============================================================
-        # 💾 SAVE HISTORY (store corrected values)
+        # 🔍 TOP KEYWORDS (TF-IDF Influence)
+        # ==============================================================
+        vec = _my_vectorizer if ml["model_used"].lower() == "malay" else _en_vectorizer
+        coef = _my_coef if ml["model_used"].lower() == "malay" else _en_coef
+
+        top_keywords = []
+        if coef is not None and hasattr(vec, "vocabulary_"):
+            try:
+                tfidf = vec.transform([text])
+                feature_names = vec.get_feature_names_out()
+                weights = (tfidf.toarray()[0] * coef)
+                ranked = sorted(
+                    [(feature_names[i], weights[i]) for i in range(len(feature_names)) if weights[i] != 0],
+                    key=lambda x: abs(x[1]),
+                    reverse=True
+                )
+                top_keywords = [w for w, _ in ranked[:10]]
+            except Exception:
+                top_keywords = []
+
+        # ==============================================================
+        # ⚖️ RISK LEVEL
+        # ==============================================================
+        fake_score = heur.get("fake_score", 0)
+        if final_label == "Fake":
+            risk_level = "High" if corrected_conf > 0.75 or fake_score > 0.5 else "Medium"
+        elif final_label == "Likely Real":
+            risk_level = "Medium"
+        else:
+            risk_level = "Low"
+
+        # ==============================================================
+        # 💾 SAVE HISTORY
         # ==============================================================
         if username:
             with get_db_connection() as conn:
@@ -399,8 +481,8 @@ def predict():
                     headline,
                     url,
                     text,
-                    final_label,          # ✅ Store corrected label
-                    corrected_conf,       # ✅ Store corrected confidence
+                    final_label,
+                    corrected_conf,
                     json.dumps(heur),
                     json.dumps(trust)
                 ))
@@ -410,15 +492,19 @@ def predict():
         # 📤 RETURN JSON RESPONSE
         # ==============================================================
         return safe_json({
-            "version": "2025.11-FINAL",
+            "version": "2025.11-ENHANCED",
             "username": username or "Guest",
             "headline": headline,
             "url": url,
             "language": ml["language"],
             "model_used": ml["model_used"],
-            "prediction": final_label,           # ✅ Consistent label
-            "confidence": corrected_conf,        # ✅ Consistent confidence
-            "raw_prediction": base_label,        # 🧠 Optional (for debugging)
+            "prediction": final_label,
+            "confidence": corrected_conf,
+            "raw_prediction": base_label,
+            "risk_level": risk_level,
+            "sentiment_label": sentiment_label,
+            "article_stats": article_stats,
+            "top_keywords": top_keywords,
             "class_probs": ml["class_probs"],
             "heuristics": heur,
             "trustability": trust,
@@ -471,7 +557,7 @@ def get_history():
 
     return jsonify({"history": history})
 
-# --- REPORT ---
+# --- REPORT (Enhanced) ---
 @app.route("/get-report/<int:scan_id>")
 def get_report(scan_id):
     token = request.args.get("token") or request.headers.get("Authorization", "").replace("Bearer ", "")
@@ -490,25 +576,87 @@ def get_report(scan_id):
     if not row:
         return "<h3>Report not found.</h3>", 404
 
-    heur = json.loads(row[6])
-    trust = json.loads(row[7])
-
-    # ✅ Use stored prediction directly (no recomputation)
+    # ==============================================================
+    # 📊 Load stored data
+    # ==============================================================
+    text = row[3] or ""
+    heur = json.loads(row[6]) if row[6] else {}
+    trust = json.loads(row[7]) if row[7] else {}
     label = str(row[4]).strip()
 
-    # ✅ Detect language for highlighting only
-    text = row[3] or ""
+    # ==============================================================
+    # 🌐 Language & Model
+    # ==============================================================
     lang = detect_lang(text)
     load_models_if_needed("ms" if lang == "ms" else "en")
-
-    # ✅ Choose correct model/language names
     model_used = "Malay" if (lang == "ms" and _my_model and _my_vectorizer) else "English"
     language = "Malay" if lang == "ms" else "English"
 
-    # ✅ Generate explainable highlights using stored label
+    # ==============================================================
+    # 📈 Text Statistics
+    # ==============================================================
+    sentences = re.split(r"[.!?]", text)
+    words = re.findall(r"\b\w+\b", text)
+    word_count = len(words)
+    sentence_count = len([s for s in sentences if s.strip()])
+    avg_sentence_len = round(word_count / max(sentence_count, 1), 2)
+
+    article_stats = {
+        "word_count": word_count,
+        "sentence_count": sentence_count,
+        "avg_sentence_len": avg_sentence_len,
+    }
+
+    # ==============================================================
+    # 😊 Sentiment Analysis
+    # ==============================================================
+    sentiment_score = heur.get("sentiment", 0)
+    sentiment_label = (
+        "Positive" if sentiment_score > 0.25 else
+        "Negative" if sentiment_score < -0.25 else
+        "Neutral"
+    )
+
+    # ==============================================================
+    # ⚠️ Risk Level
+    # ==============================================================
+    fake_score = heur.get("fake_score", 0)
+    confidence = float(row[5]) if row[5] else 0
+    if "Fake" in label:
+        risk_level = "High" if confidence > 0.75 or fake_score > 0.5 else "Medium"
+    elif "Likely" in label:
+        risk_level = "Medium"
+    else:
+        risk_level = "Low"
+
+    # ==============================================================
+    # 🧠 Top Keywords (TF-IDF Influence)
+    # ==============================================================
+    vec = _my_vectorizer if language == "Malay" else _en_vectorizer
+    coef = _my_coef if language == "Malay" else _en_coef
+    top_keywords = []
+    if coef is not None and hasattr(vec, "vocabulary_"):
+        try:
+            tfidf = vec.transform([text])
+            feature_names = vec.get_feature_names_out()
+            weights = (tfidf.toarray()[0] * coef)
+            ranked = sorted(
+                [(feature_names[i], weights[i]) for i in range(len(feature_names)) if weights[i] != 0],
+                key=lambda x: abs(x[1]),
+                reverse=True
+            )
+            top_keywords = [w for w, _ in ranked[:10]]
+        except Exception as e:
+            logging.warning(f"⚠️ Keyword extraction failed: {e}")
+
+    # ==============================================================
+    # 🧩 Explainability Highlights
+    # ==============================================================
     highlighted_lines, explain_reasons = explain_text(text, trust, label, model_used)
 
-    # ✅ Pass everything to full-report.html
+    # ==============================================================
+    # ✅ Render full-report.html with rich data
+    # ==============================================================
     return render_template(
         "full-report.html",
         row=row,
@@ -518,7 +666,11 @@ def get_report(scan_id):
         highlighted_lines=highlighted_lines,
         explain_reasons=explain_reasons,
         language=language,
-        model_used=model_used
+        model_used=model_used,
+        sentiment_label=sentiment_label,
+        risk_level=risk_level,
+        article_stats=article_stats,
+        top_keywords=top_keywords
     )
 
 # ============================================================== #
