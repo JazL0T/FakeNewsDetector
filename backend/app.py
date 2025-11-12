@@ -283,36 +283,101 @@ def _cached_predict(lang: str, clean_text_hash: str, original_text: str):
         "coef_vector": coef
     }
 
-def predict_fake_news(text: str):
+def predict_fake_news(text: str, url: str = ""):
     """
-    Perform AI-based fake news prediction with support for long articles.
-    - Short texts: cached for faster results.
-    - Long texts: analyzed in multiple segments for accuracy and stability.
+    Perform AI-based fake news prediction with dual-model (EN/MY) selection.
+    - Uses safe_detect_language() for domain-aware detection.
+    - Caches short texts and analyzes long articles in chunks.
     """
     if not text.strip():
         return {"error": "Empty text"}
 
-    # --- Language detection ---
-    lang = detect_lang(text)
-    load_models_if_needed(lang)
-    model, vec, coef, used = (
-        (_my_model, _my_vectorizer, _my_coef, "Malay")
-        if lang == "ms" and _my_model and _my_vectorizer
-        else (_en_model, _en_vectorizer, _en_coef, "English")
-    )
+    # --- Language detection with URL awareness ---
+    lang = safe_detect_language(text, url)
+    logging.info(f"[LangDetect] {url} → {lang}")
+
+    # --- Load models based on language ---
+    if lang.lower().startswith("malay") or lang.lower() == "ms":
+        load_models_if_needed("ms")
+        model, vec, coef, used = _my_model, _my_vectorizer, _my_coef, "Malay"
+    else:
+        load_models_if_needed("en")
+        model, vec, coef, used = _en_model, _en_vectorizer, _en_coef, "English"
 
     # --- Prepare text and hash for caching ---
     clean_text = tokenize_text(text)
     text_hash = hashlib.sha256(clean_text.encode()).hexdigest()
     word_count = len(clean_text.split())
 
-    # --- For short text (<700 words): use cache ---
+    # --- Short text optimization ---
     if word_count < 700:
-        res = _cached_predict(lang, text_hash, text)
-        res["language"] = "Malay" if lang == "ms" else "English"
+        res = _cached_predict("ms" if used == "Malay" else "en", text_hash, text)
+        res["language"] = lang
         res["chunks_analyzed"] = 1
-        logging.info(f"🧠 Cached prediction used for short text ({word_count} words).")
-        return res, (lang == "ms" and _my_model and _my_vectorizer)
+        logging.info(f"🧠 Cached prediction used for short text ({word_count} words) → {used}")
+        return res, (used == "Malay")
+
+    # --- Long text: split into manageable chunks ---
+    def chunk_text(text, max_words=700):
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        chunks, current, word_count = [], [], 0
+        for sent in sentences:
+            w = len(sent.split())
+            if word_count + w > max_words and current:
+                chunks.append(" ".join(current))
+                current, word_count = [sent], w
+            else:
+                current.append(sent)
+                word_count += w
+        if current:
+            chunks.append(" ".join(current))
+        return chunks
+
+    chunks = chunk_text(text)
+    chunk_preds, chunk_probs = [], []
+
+    # --- Evaluate each chunk individually ---
+    for chunk in chunks:
+        try:
+            features = vec.transform([chunk])
+            pred = model.predict(features)[0]
+            probs = (
+                model.predict_proba(features)[0]
+                if hasattr(model, "predict_proba")
+                else [0.5, 0.5]
+            )
+            chunk_preds.append(pred)
+            chunk_probs.append(probs)
+        except Exception as e:
+            logging.warning(f"⚠️ Chunk skipped: {e}")
+
+    # --- Aggregate results across chunks ---
+    if not chunk_preds:
+        return {"error": "No valid text processed"}
+
+    avg_probs = [
+        sum(p[i] for p in chunk_probs) / len(chunk_probs)
+        for i in range(2)
+    ]
+    avg_conf = float(max(avg_probs))
+    final_pred = int(avg_probs[1] > avg_probs[0])
+
+    result = {
+        "prediction": str(final_pred),
+        "confidence": avg_conf,
+        "class_probs": {"0": float(avg_probs[0]), "1": float(avg_probs[1])},
+        "model_used": used,
+        "coef_vector": coef,
+        "language": lang,
+        "chunks_analyzed": len(chunks)
+    }
+
+    logging.info(
+        f"🧠 Article analyzed ({word_count} words, {len(chunks)} chunks) | "
+        f"Language={lang} | Model={used}"
+    )
+
+    return result, (used == "Malay")
 
     # --- For long text: split into manageable chunks ---
     def chunk_text(text, max_words=700):
@@ -738,7 +803,7 @@ def predict():
         # ==============================================================
         # 🧠 MODEL PREDICTION
         # ==============================================================
-        ml, _ = predict_fake_news(text)
+        ml, _ = predict_fake_news(text, url)
         ml = dict(ml)
         base_label = "Fake" if ml["prediction"] == "0" else "Real"
 
