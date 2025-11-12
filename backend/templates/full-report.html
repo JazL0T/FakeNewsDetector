@@ -356,18 +356,25 @@
     </div>
 
     <div class="card">
-      <h2><span></span> Evidence Extracted</h2>
-      {% if highlighted_lines %}
-        <div class="evidence-box">
-          {% for line in highlighted_lines[:20] %}
-            <div class="evidence-line {% if line.weight > 0 %}real{% else %}fake{% endif %}">{{ line.text }}</div>
-          {% endfor %}
+  <h2><span></span> Evidence Extracted</h2>
+  {% if highlighted_lines %}
+    <div class="evidence-box">
+      {% for line in highlighted_lines[:20] %}
+        <div class="evidence-line {% if line.weight > 0 %}real{% else %}fake{% endif %}">
+          {{ line.text }}
+          {% if line.tags %}
+            <div style="font-size:12px;color:#555;margin-top:4px;">
+              <strong>Signals:</strong> {{ line.tags|join(', ') }}
+            </div>
+          {% endif %}
         </div>
-        <p style="font-size:12.5px;color:#777;margin-top:6px;">🟢 = Factual | 🔴 = Possibly Misleading</p>
-      {% else %}
-        <p>No highlighted evidence found.</p>
-      {% endif %}
+      {% endfor %}
     </div>
+    <p style="font-size:12.5px;color:#777;margin-top:6px;">🟢 = Factual | 🔴 = Possibly Misleading</p>
+  {% else %}
+    <p>No highlighted evidence found.</p>
+  {% endif %}
+</div>
 
     <div class="card">
       <h2><span></span> Source Trust Analysis</h2>
