@@ -373,25 +373,61 @@ def _line_heuristics(line: str):
     return 0.5 - fake_pressure
 
 def explain_text(text: str, trust: dict, final_pred: str, model_used: str):
+    """
+    Generate explainable highlights and reasoning for the analyzed article.
+    Each line is evaluated using TF-IDF weights, heuristics, and keyword signals.
+    """
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     highlighted, reasons = [], []
-    vec, coef = (_my_vectorizer, _my_coef) if model_used.lower() == "malay" and _my_vectorizer else (_en_vectorizer, _en_coef)
+
+    # Select appropriate vectorizer and coefficients
+    vec, coef = (
+        (_my_vectorizer, _my_coef)
+        if model_used.lower() == "malay" and _my_vectorizer
+        else (_en_vectorizer, _en_coef)
+    )
+
+    # Add trust context
     reasons.append(f"Domain '{trust.get('domain')}' categorized as {trust.get('category')}.")
 
+    # Process each line
     for ln in lines:
         w_tfidf = _tfidf_line_score(ln, vec, coef)
         w_heur = _line_heuristics(ln)
         f_hits, r_hits = _kw_hits(ln)
+
+        # Combine keyword signals
         kw_signal = (-0.3 * len(f_hits)) + (0.2 * len(r_hits))
         total = w_tfidf + w_heur + kw_signal
-        tags = []
-        if f_hits: tags.append(f"Fake cues: {', '.join(f_hits)}")
-        if r_hits: tags.append(f"Real cues: {', '.join(r_hits)}")
-        if abs(w_tfidf) > 0.2: tags.append("Model-weighted term influence")
-        highlighted.append({"text": ln, "weight": total, "tags": tags})
 
+        # Collect human-readable signal tags
+        tags = []
+        if f_hits:
+            tags.append(f"Fake cues: {', '.join(f_hits)}")
+        if r_hits:
+            tags.append(f"Real cues: {', '.join(r_hits)}")
+        if abs(w_tfidf) > 0.2:
+            tags.append("Model-weighted term influence")
+        if abs(w_heur) > 0.3:
+            tags.append("Heuristic tone indicator")
+
+        highlighted.append({
+            "text": ln,
+            "weight": total,
+            "tags": tags
+        })
+
+    # Sort lines by influence magnitude (most relevant first)
     highlighted.sort(key=lambda d: abs(d["weight"]), reverse=True)
-    reasons.append("Model detected sensational/biased tone." if final_pred == "Fake" else "Model detected balanced/factual language.")
+
+    # Add high-level reasoning summary
+    if final_pred == "Fake":
+        reasons.append("Model detected sensational or biased tone in text.")
+    elif final_pred == "Likely Real":
+        reasons.append("Article appears mostly factual but contains mild bias indicators.")
+    else:
+        reasons.append("Model detected balanced and factually consistent language.")
+
     return highlighted[:50], reasons
 
 # ============================================================== #
