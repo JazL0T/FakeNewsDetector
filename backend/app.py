@@ -191,11 +191,14 @@ def _cached_predict(lang: str, clean_text_hash: str, original_text: str):
 
 def predict_fake_news(text: str):
     """
-    Predict fake vs real news — supports long articles and caching for short ones.
+    Perform AI-based fake news prediction with support for long articles.
+    - Short texts: cached for faster results.
+    - Long texts: analyzed in multiple segments for accuracy and stability.
     """
     if not text.strip():
         return {"error": "Empty text"}
 
+    # --- Language detection ---
     lang = detect_lang(text)
     load_models_if_needed(lang)
     model, vec, coef, used = (
@@ -204,19 +207,20 @@ def predict_fake_news(text: str):
         else (_en_model, _en_vectorizer, _en_coef, "English")
     )
 
-    # 🔹 Hash for caching if text is short
+    # --- Prepare text and hash for caching ---
     clean_text = tokenize_text(text)
     text_hash = hashlib.sha256(clean_text.encode()).hexdigest()
-
-    # 🔹 If short text (<700 words) → use cache
     word_count = len(clean_text.split())
+
+    # --- For short text (<700 words): use cache ---
     if word_count < 700:
         res = _cached_predict(lang, text_hash, text)
         res["language"] = "Malay" if lang == "ms" else "English"
-        logging.info(f"🧠 Cached prediction used for short text ({word_count} words)")
+        res["chunks_analyzed"] = 1
+        logging.info(f"🧠 Cached prediction used for short text ({word_count} words).")
         return res, (lang == "ms" and _my_model and _my_vectorizer)
 
-    # 🔹 Otherwise → use chunk-based analysis for long articles
+    # --- For long text: split into manageable chunks ---
     def chunk_text(text, max_words=700):
         sentences = re.split(r'(?<=[.!?])\s+', text)
         chunks, current, word_count = [], [], 0
@@ -235,6 +239,7 @@ def predict_fake_news(text: str):
     chunks = chunk_text(text)
     chunk_preds, chunk_probs = [], []
 
+    # --- Evaluate each chunk individually ---
     for chunk in chunks:
         try:
             features = vec.transform([chunk])
@@ -249,6 +254,7 @@ def predict_fake_news(text: str):
         except Exception as e:
             logging.warning(f"⚠️ Chunk skipped: {e}")
 
+    # --- Aggregate results across chunks ---
     if not chunk_preds:
         return {"error": "No valid text processed"}
 
@@ -269,7 +275,10 @@ def predict_fake_news(text: str):
         "chunks_analyzed": len(chunks)
     }
 
-    logging.info(f"🧠 Detected {result['language']} | {len(chunks)} chunks processed | {word_count} words")
+    logging.info(
+        f"🧠 Long article detected ({word_count} words) | "
+        f"{len(chunks)} segments analyzed | Language: {result['language']}"
+    )
 
     return result, (lang == "ms" and _my_model and _my_vectorizer)
 
