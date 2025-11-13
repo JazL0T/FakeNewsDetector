@@ -1082,9 +1082,9 @@ def get_report(scan_id):
     label = str(row[4]).strip()
 
     # 🌐 Language & Model (FIXED)
-language = safe_detect_language(text, row[2] or "")
-model_used = "Malay" if language == "Malay" else "English"
-load_models_if_needed("ms" if language == "Malay" else "en")
+    language = safe_detect_language(text, row[2] or "")
+    model_used = "Malay" if language == "Malay" else "English"
+    load_models_if_needed("ms" if language == "Malay" else "en")
 
     # ==============================================================
     # 📈 Text Statistics
