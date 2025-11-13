@@ -1081,13 +1081,10 @@ def get_report(scan_id):
     trust = json.loads(row[7]) if row[7] else {}
     label = str(row[4]).strip()
 
-    # ==============================================================
-    # 🌐 Language & Model
-    # ==============================================================
-    lang = detect_lang(text)
-    load_models_if_needed("ms" if lang == "ms" else "en")
-    model_used = "Malay" if (lang == "ms" and _my_model and _my_vectorizer) else "English"
-    language = "Malay" if lang == "ms" else "English"
+    # 🌐 Language & Model (FIXED)
+language = safe_detect_language(text, row[2] or "")
+model_used = "Malay" if language == "Malay" else "English"
+load_models_if_needed("ms" if language == "Malay" else "en")
 
     # ==============================================================
     # 📈 Text Statistics
