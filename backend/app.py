@@ -28,7 +28,7 @@ from textblob import TextBlob
 from dotenv import load_dotenv
 
 from langdetect import detect_langs, DetectorFactory
-DetectorFactory.seed = 0 
+DetectorFactory.seed = 0
 
 import tldextract
 # ============================================================== #
@@ -435,11 +435,11 @@ def predict_fake_news(text: str, url: str = ""):
     }
 
     logging.info(
-        f"🧠 Article analyzed ({word_count} words, {len(chunks)} chunks) | "
-        f"Language={lang} | Model={used}"
+        f"🧠 Long article detected ({word_count} words) | "
+        f"{len(chunks)} segments analyzed | Language: {result['language']}"
     )
 
-    return result, (used == "Malay")
+    return result, (lang == "ms" and _my_model and _my_vectorizer)
 
     # --- For long text: split into manageable chunks ---
     def chunk_text(text, max_words=700):
@@ -1182,4 +1182,3 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))  # ✅ Render sets this automatically
     logging.info(f"🚀 Starting server on port {port}")
     app.run(host="0.0.0.0", port=port, debug=False)
-
