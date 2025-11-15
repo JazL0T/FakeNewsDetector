@@ -988,12 +988,12 @@ def admin_stats():
 @app.route("/admin/logs", methods=["GET"])
 def admin_logs():
 
-    # 🔐 Secret key check
+    # Secret key check
     check = require_admin_secret()
     if check:
         return check
 
-    # 🔐 Admin token check
+    # Admin token check
     admin, error, code = require_admin()
     if error:
         return error, code
@@ -1008,7 +1008,14 @@ def admin_logs():
         """)
         rows = cur.fetchall()
 
-    logs = [dict(row) for row in rows]
+    logs = [
+        {
+            "username": row["username"],
+            "action": row["action"],
+            "time": row["time"],
+        }
+        for row in rows
+    ]
 
     return jsonify({"logs": logs}), 200
 
