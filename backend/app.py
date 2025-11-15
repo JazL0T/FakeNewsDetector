@@ -227,20 +227,24 @@ def init_db():
         conn.commit()
 
 def create_default_admin():
-    admin_user = "admin"
-    admin_pass = "Admin1234!"
+    admin_user = os.getenv("ADMIN_USERNAME")
+    admin_pass = os.getenv("ADMIN_PASSWORD")
 
     with sqlite3.connect(app.config["DB_PATH"]) as conn:
         cur = conn.cursor()
-        cur.execute("SELECT * FROM users WHERE username=?", (admin_user,))
-        if not cur.fetchone():
-            hashed = generate_password_hash(admin_pass)
-            cur.execute("""
-                INSERT INTO users (username, password, is_admin)
-                VALUES (?, ?, 1)
-            """, (admin_user, hashed))
-            conn.commit()
-            print("✅ Default admin created: admin / Admin1234!")
+
+        cur.execute("SELECT id FROM users WHERE username=?", (admin_user,))
+        if cur.fetchone():
+            return  # Admin already exists
+
+        hashed = generate_password_hash(admin_pass)
+        cur.execute("""
+            INSERT INTO users (username, password, is_admin)
+            VALUES (?, ?, 1)
+        """, (admin_user, hashed))
+
+        conn.commit()
+        print(f"✅ Admin created from ENV: {admin_user}")
 
 def get_db_connection():
     """Optimized SQLite connection with better performance and safety."""
