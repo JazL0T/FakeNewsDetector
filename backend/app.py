@@ -707,6 +707,19 @@ def require_admin():
     except Exception:
         return None, jsonify({"error": "Invalid or missing token"}), 401
 
+def require_admin_secret():
+    """Second security layer: secret admin header."""
+    admin_key = request.headers.get("X-Admin-Key")
+    real_key = os.getenv("ADMIN_SECRET_KEY")
+
+    if not real_key:
+        return jsonify({"error": "Server misconfigured"}), 500
+
+    if admin_key != real_key:
+        return jsonify({"error": "Forbidden — missing or invalid admin key"}), 403
+
+    return None
+
 # ============================================================== #
 # ROUTES
 # ============================================================== #
@@ -819,6 +832,12 @@ def login():
 
 @app.route("/admin/users", methods=["GET"])
 def admin_list_users():
+
+    # 🔐 New security layer
+    check = require_admin_secret()
+    if check:
+        return check
+
     admin, error, code = require_admin()
     if error:
         return error, code
@@ -835,6 +854,12 @@ def admin_list_users():
 
 @app.route("/admin/delete-user/<string:username>", methods=["DELETE"])
 def admin_delete_user(username):
+
+    # 🔐 New security layer
+    check = require_admin_secret()
+    if check:
+        return check
+
     admin, error, code = require_admin()
     if error:
         return error, code
@@ -862,6 +887,12 @@ def admin_delete_user(username):
 
 @app.route("/admin/stats", methods=["GET"])
 def admin_stats():
+
+    # 🔐 New security layer
+    check = require_admin_secret()
+    if check:
+        return check
+
     admin, error, code = require_admin()
     if error:
         return error, code
