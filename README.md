@@ -1,68 +1,84 @@
-#  Fake News Detector 101
+# 🔍 Fake News Detector 101
 
-**Fake News Detector 101** is a smart browser extension powered by AI and linguistic analysis that helps you instantly detect misleading, biased, or false news articles online — making fact-checking effortless for everyone.
+**Fake News Detector 101** is an AI-powered browser extension that analyzes any webpage in real time to detect misleading, biased, or false news. It provides clear explanations, confidence scores, and trust indicators — making fact-checking effortless for everyone.
 
 ---
 
 ## 🔵 Features
 
-✅ **Scan any website** to detect fake or real news  
-✅ **Instant trust score** — based on tone, sentiment, and domain credibility  
-✅ **Explainable AI insights** — highlights keywords, tone, and evidence from the text  
-✅ **Privacy-first design** — no tracking, no personal data collection  
-✅ **Works with major news outlets** — CNN, BBC, Reuters, The Guardian, and more  
+- ✅ **Scan any website** for fake or real news  
+- ✅ **Instant trust score** (tone, sentiment, domain credibility)  
+- ✅ **Explainable AI insights** — highlighted keywords, tone, and evidence  
+- ✅ **Privacy-first** — no tracking, no personal data collection  
+- ✅ **Compatible with major news sources** (CNN, BBC, Reuters, The Guardian, etc.)
 
 ---
 
 ## 🔵 Official Links
 
-- **Website:** [https://www.fakenewsdetector101.com](https://www.fakenewsdetector101.com/)
-- **Privacy Policy:** [https://www.fakenewsdetector101.com/privacy.php](https://www.fakenewsdetector101.com/privacy.php)
-- **Terms of Service:** [https://www.fakenewsdetector101.com/terms.php](https://www.fakenewsdetector101.com/terms.php)
-- **Contact:** [https://www.fakenewsdetector101.com/contact.php](https://www.fakenewsdetector101.com/contact.php)
-- **Backend API:** [https://fakenewsdetector-zjzs.onrender.com](https://fakenewsdetector-zjzs.onrender.com)
-- **Source Code (GitHub):** [https://github.com/JazL0T/FakeNewsDetector](https://github.com/JazL0T/FakeNewsDetector)
+- **Website:** https://www.fakenewsdetector101.com  
+- **Backend API:** https://fakenewsdetector-zjzs.onrender.com  
+- **Source Code:** https://github.com/JazL0T/FakeNewsDetector  
+- **Privacy Policy**  
+- **Terms of Service**  
+- **Contact Page**  
 
 ---
 
 ## 🔵 How It Works
 
-1. Install the **Fake News Detector 101** Chrome extension.  
-2. Visit any online article or webpage.  
-3. Click the extension icon to **scan** the content.  
-4. The AI analyzes the text and returns:
-   - 🟢 **Real** — reliable and factual  
-   - 🔴 **Fake** — misleading or suspicious  
-   - 🟡 **Uncertain** — mixed indicators (verify further)  
-5. View a detailed **confidence score**, **tone**, and **trustability analysis**.
+1. Install the **Fake News Detector 101** extension.  
+2. Open any webpage or online article.  
+3. Click the extension icon to **Scan**.  
+4. The AI analyzes the text (English + Malay) and returns:  
+   - 🟢 **Real** — reliable  
+   - 🔴 **Fake** — misleading  
+   - 🟡 **Uncertain** — mixed indicators  
+5. Review the detailed output: **confidence score**, **tone**, **keywords**, **evidence**, and **source trust rating**.
 
 ---
 
 ## 🔵 Technical Overview
 
 | Component | Description |
-|------------|-------------|
-| **Backend** | Flask (Python), SQLite, TextBlob, Scikit-learn |
-| **Frontend** | Chrome Extension (Manifest V3, HTML, CSS, JS) |
-| **Deployment** | Render Cloud (Python API) |
-| **Model** | Logistic Regression + TF-IDF Heuristic Analysis |
-| **Security** | JWT-based auth, HTTPS enforced, .env protected |
+|----------|-------------|
+| **Backend** | Python (Flask), SQLite, TextBlob, Scikit-learn |
+| **Model** | Logistic Regression + TF-IDF heuristic analysis |
+| **Frontend** | Chrome Extension (Manifest V3) |
+| **Deployment** | Render Cloud |
+| **Security** | HTTPS, JWT authentication, `.env` protection |
 
 ---
 
 ## 🔵 Security & Privacy
 
-- No personal data is stored, shared, or sold.  
-- All communication uses secure **HTTPS**.  
-- Authentication uses **JWT** (JSON Web Tokens).  
-- Sensitive credentials are kept in `.env` (not public in GitHub).  
-- Backend code is open for transparency.
+- No personal data stored or shared  
+- No tracking or analytics  
+- No browsing history collected  
+- All communication secured via **HTTPS**  
+- Backend is open-source for transparency  
 
 ---
 
-## 🔵 Developer Setup 
+## 🔵 Dataset Usage & Credits
 
-If you want to run your own version locally:
+This project uses publicly available datasets for academic research.  
+Please credit the original curators:
+
+1. **Zolkepli, Husein — “Malay-Dataset”**  
+   Text corpus for Bahasa Malaysia  
+   https://github.com/huseinzol05/Malay-Dataset  
+
+2. **Zolkepli, Husein — “Malaya”**  
+   Natural Language Toolkit for Bahasa Malaysia  
+   https://github.com/huseinzol05/Malaya  
+
+3. **Abaghyangor — “Fake News Dataset” (Kaggle)**  
+   https://www.kaggle.com/datasets/abaghyangor/fake-news-dataset  
+
+---
+
+## 🔵 Developer Setup
 
 ```bash
 # 1. Clone the repository
@@ -74,5 +90,5 @@ cd FakeNewsDetector/backend
 # 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Run Flask backend
+# 4. Run the backend
 python app.py
