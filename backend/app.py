@@ -985,6 +985,33 @@ def admin_stats():
         }
     }), 200
 
+@app.route("/admin/logs", methods=["GET"])
+def admin_logs():
+
+    # 🔐 Secret key check
+    check = require_admin_secret()
+    if check:
+        return check
+
+    # 🔐 Admin token check
+    admin, error, code = require_admin()
+    if error:
+        return error, code
+
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT username, action, time
+            FROM logs
+            ORDER BY time DESC
+            LIMIT 100
+        """)
+        rows = cur.fetchall()
+
+    logs = [dict(row) for row in rows]
+
+    return jsonify({"logs": logs}), 200
+
 # --- PREDICT (ENHANCED VERSION) ---
 @app.route("/predict", methods=["POST"])
 @limiter.limit(PREDICT_LIMIT)
