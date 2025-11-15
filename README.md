@@ -19,10 +19,9 @@
 * **Website:** [https://www.fakenewsdetector101.com](https://www.fakenewsdetector101.com)
 * **Backend API:** [https://fakenewsdetector-zjzs.onrender.com](https://fakenewsdetector-zjzs.onrender.com)
 * **Source Code:** [https://github.com/JazL0T/FakeNewsDetector](https://github.com/JazL0T/FakeNewsDetector)
-* **Privacy Policy**
-* **Terms of Service**
-* **Contact Page**
-
+* **Privacy Policy:** https://www.fakenewsdetector101.com/privacy-policy  
+* **Terms of Service:** https://www.fakenewsdetector101.com/terms-of-service  
+* **Contact:** https://www.fakenewsdetector101.com/contact
 ---
 
 ## 🔵 How It Works
