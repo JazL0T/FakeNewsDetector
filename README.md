@@ -111,7 +111,3 @@ pip install -r requirements.txt
 # 4. Run the backend
 python app.py
 ```
-
----
-
-If you'd like, I can help you add badges, screenshots, or a roadmap section.
