@@ -198,15 +198,22 @@ def init_db():
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA synchronous=NORMAL;")
         c = conn.cursor()
-        c.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        is_admin INTEGER DEFAULT 0
-    )
-""")
 
+        # -------------------------
+        # USERS TABLE
+        # -------------------------
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL,
+                is_admin INTEGER DEFAULT 0
+            )
+        """)
+
+        # -------------------------
+        # SCANS TABLE
+        # -------------------------
         c.execute("""
             CREATE TABLE IF NOT EXISTS scans (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -224,6 +231,19 @@ def init_db():
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # -------------------------
+        # ✅ NEW: LOGS TABLE
+        # -------------------------
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT,
+                action TEXT,
+                time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
         conn.commit()
 
 def create_default_admin():
@@ -430,6 +450,17 @@ def analyze_text_heuristics(text: str) -> dict:
     exclamations = text.count("!")
     fake_score = 0.4 * (1 - abs(sentiment)) + 0.3 * upper_ratio + 0.3 * min(exclamations / 5, 1)
     return {"sentiment": sentiment, "uppercase_ratio": upper_ratio, "exclamations": exclamations, "fake_score": fake_score}
+
+def add_log(username, action):
+    try:
+        with get_db_connection() as conn:
+            conn.execute(
+                "INSERT INTO logs (username, action) VALUES (?, ?)",
+                (username, action)
+            )
+            conn.commit()
+    except Exception as e:
+        logging.warning(f"⚠️ Failed to write log: {e}")
 
 # ============================================================== #
 # TEXT ANALYTICS & FEATURE INSIGHTS
@@ -779,17 +810,21 @@ def home():
 def register():
     data = request.get_json() or {}
     username, password = data.get("username", "").strip(), data.get("password", "").strip()
+
     if not username or not password:
         return jsonify({"error": "Missing fields"}), 400
-    if len(password) < 8:
-        return jsonify({"error": "Password must be at least 8 characters"}), 400
-    hashed = generate_password_hash(password)
+
     try:
+        hashed = generate_password_hash(password)
         with get_db_connection() as conn:
             conn.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed))
             conn.commit()
+
+        add_log(username, "Registered new account")
         return jsonify({"message": "User registered successfully."})
+
     except sqlite3.IntegrityError:
+        add_log(username, "Failed registration (username exists)")
         return jsonify({"error": "Username already exists."}), 400
 
 @app.route("/login", methods=["POST"])
@@ -808,6 +843,7 @@ def login():
         row = cur.fetchone()
 
     if not row or not check_password_hash(row[0], password):
+        add_log(username or "Unknown", "Failed login attempt")
         return jsonify({"error": "Invalid credentials"}), 401
 
     hashed_password, is_admin = row
@@ -819,6 +855,9 @@ def login():
         "is_admin": is_admin,
         "exp": datetime.utcnow() + timedelta(hours=3)
     }, app.config["JWT_SECRET"], algorithm="HS256")
+
+    # ✅ Log successful login
+    add_log(username, "Logged in successfully")
 
     # Frontend-safe response
     return jsonify({
@@ -834,15 +873,22 @@ def login():
 @app.route("/admin/users", methods=["GET"])
 def admin_list_users():
 
-    # 🔐 New security layer
+    # 🔐 Layer 1: Admin secret key check
     check = require_admin_secret()
     if check:
+        add_log("Unknown", "Failed admin-secret key attempt (view users)")
         return check
 
+    # 🔐 Layer 2: JWT admin check
     admin, error, code = require_admin()
     if error:
+        add_log("Unknown", "Unauthorized attempt to access user list")
         return error, code
 
+    # 📝 Log admin action
+    add_log(admin, "Viewed user list")
+
+    # 📥 Load all users
     with get_db_connection() as conn:
         cur = conn.cursor()
         cur.execute("SELECT id, username, is_admin FROM users ORDER BY id DESC")
@@ -852,39 +898,54 @@ def admin_list_users():
 
     return jsonify({"admin": admin, "users": users}), 200
 
-
 @app.route("/admin/delete-user/<string:username>", methods=["DELETE"])
 def admin_delete_user(username):
 
-    # 🔐 New security layer
+    # 🔐 Layer 1: Admin secret key check
     check = require_admin_secret()
     if check:
+        add_log("Unknown", f"Failed admin-secret key attempt (delete user: {username})")
         return check
 
+    # 🔐 Layer 2: JWT admin validation
     admin, error, code = require_admin()
     if error:
+        add_log("Unknown", f"Unauthorized attempt to delete user: {username}")
         return error, code
 
-    # prevent admin from deleting themselves accidentally
+    # ❌ Prevent deleting own admin account
     if admin == username:
+        add_log(admin, f"Attempted to delete own admin account (blocked)")
         return jsonify({"error": "Cannot delete your own admin account"}), 403
 
     with get_db_connection() as conn:
         cur = conn.cursor()
-        # check if user exists and if admin flag
+
+        # 🔍 Check if target user exists
         cur.execute("SELECT id, is_admin FROM users WHERE username=?", (username,))
         row = cur.fetchone()
+
         if not row:
+            add_log(admin, f"Tried to delete non-existing user: {username}")
             return jsonify({"error": "User not found"}), 404
+
+        # ⛔ Prevent deleting admin accounts
         if int(row["is_admin"]) == 1:
+            add_log(admin, f"Tried to delete admin account: {username} (blocked)")
             return jsonify({"error": "Cannot delete admin accounts"}), 403
 
-        # delete scans and user
+        # 🗑️ Proceed with deletion
         cur.execute("DELETE FROM scans WHERE username=?", (username,))
         cur.execute("DELETE FROM users WHERE username=?", (username,))
         conn.commit()
 
-    return jsonify({"message": f"User '{username}' and related scans deleted", "performed_by": admin}), 200
+    # 📝 Log successful deletion
+    add_log(admin, f"Deleted user: {username}")
+
+    return jsonify({
+        "message": f"User '{username}' and related scans deleted",
+        "performed_by": admin
+    }), 200
 
 @app.route("/admin/stats", methods=["GET"])
 def admin_stats():
