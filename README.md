@@ -1,4 +1,4 @@
-# 🔍 Fake News Detector 101
+# Fake News Detector 101
 
 **Fake News Detector 101** is an AI-powered browser extension that analyzes any webpage in real time to detect misleading, biased, or false news. It provides clear explanations, confidence scores, and trust indicators — making fact-checking effortless for everyone.
 
