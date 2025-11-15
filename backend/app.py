@@ -860,24 +860,6 @@ def admin_delete_user(username):
 
     return jsonify({"message": f"User '{username}' and related scans deleted", "performed_by": admin}), 200
 
-@app.route("/admin/delete-user/<string:username>", methods=["DELETE"])
-def admin_delete_user(username):
-    admin, error, code = require_admin()
-    if error:
-        return error, code
-
-    with get_db_connection() as conn:
-        cur = conn.cursor()
-        cur.execute("DELETE FROM scans WHERE id=?", (scan_id,))
-        deleted = cur.rowcount
-        conn.commit()
-
-    if deleted == 0:
-        return jsonify({"error": "Scan not found"}), 404
-
-    return jsonify({"message": f"Scan {scan_id} deleted successfully", "performed_by": admin}), 200
-
-
 @app.route("/admin/stats", methods=["GET"])
 def admin_stats():
     admin, error, code = require_admin()
