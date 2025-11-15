@@ -789,6 +789,10 @@ def login():
         "is_admin": is_admin
     })
 
+# -----------------------
+# Admin endpoints (fixed)
+# -----------------------
+
 @app.route("/admin/users", methods=["GET"])
 def admin_list_users():
     admin, error, code = require_admin()
@@ -797,44 +801,47 @@ def admin_list_users():
 
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT username, id FROM users ORDER BY id DESC")
+        cur.execute("SELECT id, username, is_admin FROM users ORDER BY id DESC")
         rows = cur.fetchall()
 
-    return jsonify({
-        "admin": admin,
-        "users": [{"id": r[1], "username": r[0]} for r in rows]
-    })
+    users = [{"id": r[0], "username": r[1], "is_admin": bool(r[2])} for r in rows]
 
-@app.route("/admin/delete-user/<username>", methods=["DELETE"])
+    return jsonify({"admin": admin, "users": users}), 200
+
+
+@app.route("/admin/delete-user/<string:username>", methods=["DELETE"])
 def admin_delete_user(username):
     admin, error, code = require_admin()
-if error:
-    return error, code
+    if error:
+        return error, code
+
+    # prevent admin from deleting themselves accidentally
+    if admin == username:
+        return jsonify({"error": "Cannot delete your own admin account"}), 403
 
     with get_db_connection() as conn:
         cur = conn.cursor()
+        # check if user exists and if admin flag
+        cur.execute("SELECT id, is_admin FROM users WHERE username=?", (username,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({"error": "User not found"}), 404
+        if int(row["is_admin"]) == 1:
+            return jsonify({"error": "Cannot delete admin accounts"}), 403
 
-        # Delete scans first
+        # delete scans and user
         cur.execute("DELETE FROM scans WHERE username=?", (username,))
-        # Delete user
         cur.execute("DELETE FROM users WHERE username=?", (username,))
-        deleted = cur.rowcount
-
         conn.commit()
 
-    if deleted == 0:
-        return jsonify({"error": "User not found"}), 404
+    return jsonify({"message": f"User '{username}' and related scans deleted", "performed_by": admin}), 200
 
-    return jsonify({
-        "message": f"User '{username}' deleted successfully",
-        "performed_by": admin
-    })
 
 @app.route("/admin/delete-scan/<int:scan_id>", methods=["DELETE"])
 def admin_delete_scan(scan_id):
     admin, error, code = require_admin()
-if error:
-    return error, code
+    if error:
+        return error, code
 
     with get_db_connection() as conn:
         cur = conn.cursor()
@@ -845,31 +852,28 @@ if error:
     if deleted == 0:
         return jsonify({"error": "Scan not found"}), 404
 
-    return jsonify({
-        "message": f"Scan {scan_id} deleted successfully",
-        "performed_by": admin
-    })
+    return jsonify({"message": f"Scan {scan_id} deleted successfully", "performed_by": admin}), 200
+
 
 @app.route("/admin/stats", methods=["GET"])
 def admin_stats():
     admin, error, code = require_admin()
-if error:
-    return error, code
+    if error:
+        return error, code
 
     with get_db_connection() as conn:
         cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) as cnt FROM users")
+        users = cur.fetchone()["cnt"]
 
-        cur.execute("SELECT COUNT(*) FROM users")
-        users = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) as cnt FROM scans")
+        scans = cur.fetchone()["cnt"]
 
-        cur.execute("SELECT COUNT(*) FROM scans")
-        scans = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) as cnt FROM scans WHERE prediction LIKE 'Fake%'")
+        fake_count = cur.fetchone()["cnt"]
 
-        cur.execute("SELECT COUNT(*) FROM scans WHERE prediction='Fake'")
-        fake_count = cur.fetchone()[0]
-
-        cur.execute("SELECT COUNT(*) FROM scans WHERE prediction='Real'")
-        real_count = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) as cnt FROM scans WHERE prediction LIKE 'Real%'")
+        real_count = cur.fetchone()["cnt"]
 
     return jsonify({
         "admin": admin,
@@ -881,7 +885,7 @@ if error:
             "malay_model_loaded": bool(_my_model),
             "english_model_loaded": bool(_en_model)
         }
-    })
+    }), 200
 
 # --- PREDICT (ENHANCED VERSION) ---
 @app.route("/predict", methods=["POST"])
