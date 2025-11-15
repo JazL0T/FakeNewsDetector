@@ -1028,6 +1028,14 @@ def admin_logs():
 
     return jsonify({"logs": logs}), 200
 
+@app.route("/log-logout", methods=["POST"])
+def log_logout():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    username = verify_jwt(token)
+    if username:
+        add_log(username, "Logged out")
+    return jsonify({"status": "ok"})
+
 # --- PREDICT (ENHANCED VERSION) ---
 @app.route("/predict", methods=["POST"])
 @limiter.limit(PREDICT_LIMIT)
@@ -1136,26 +1144,29 @@ def predict():
         # 💾 SAVE HISTORY
         # ==============================================================
         if username:
-            with get_db_connection() as conn:
-                conn.execute("""
-                    INSERT INTO scans (username, headline, url, text, prediction, confidence,
-                                       heuristics, trustability, language, risk_level, runtime)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    username,
-                    headline,
-                    url,
-                    text,
-                    final_label,
-                    corrected_conf,
-                    json.dumps(heur),
-                    json.dumps(trust),
-                    ml["language"],
-                    risk_level,
-                    round(time.time() - start_time, 2)
-                ))
-                conn.commit()
+    # 🔥 log scan activity
+    add_log(username, "Performed scan")
 
+    with get_db_connection() as conn:
+        conn.execute("""
+            INSERT INTO scans (username, headline, url, text, prediction, confidence,
+                               heuristics, trustability, language, risk_level, runtime)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            username,
+            headline,
+            url,
+            text,
+            final_label,
+            corrected_conf,
+            json.dumps(heur),
+            json.dumps(trust),
+            ml["language"],
+            risk_level,
+            round(time.time() - start_time, 2)
+        ))
+        conn.commit()
+        
         # ==============================================================
         # 📤 RETURN JSON RESPONSE
         # ==============================================================
