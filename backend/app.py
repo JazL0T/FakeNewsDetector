@@ -866,6 +866,51 @@ def login():
         "is_admin": is_admin
     })
 
+@app.route("/admin/login", methods=["POST"])
+@limiter.limit("5 per minute")
+def admin_login():
+    data = request.get_json() or {}
+    username = data.get("username")
+    password = data.get("password")
+
+    if not username or not password:
+        return jsonify({"error": "Missing username or password"}), 400
+
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT password, is_admin FROM users WHERE username=?", (username,))
+        row = cur.fetchone()
+
+    if not row:
+        add_log(username, "Failed admin login — user not found")
+        return jsonify({"error": "Invalid admin credentials"}), 401
+
+    hashed_pw, is_admin = row
+    is_admin = bool(is_admin)
+
+    if not is_admin:
+        add_log(username, "Failed admin login — not admin")
+        return jsonify({"error": "Unauthorized"}), 403
+
+    if not check_password_hash(hashed_pw, password):
+        add_log(username, "Failed admin login — wrong password")
+        return jsonify({"error": "Invalid admin credentials"}), 401
+
+    # Create admin token
+    token = jwt.encode({
+        "username": username,
+        "is_admin": True,
+        "exp": datetime.utcnow() + timedelta(hours=3)
+    }, app.config["JWT_SECRET"], algorithm="HS256")
+
+    add_log(username, "Admin login success")
+
+    return jsonify({
+        "token": token,
+        "username": username,
+        "is_admin": True
+    })
+
 # -----------------------
 # Admin endpoints (fixed)
 # -----------------------
