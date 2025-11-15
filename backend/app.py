@@ -575,6 +575,7 @@ def compute_trustability(url: str) -> dict:
         "thestar.com.my", "malaymail.com", "bernama.com", "astroawani.com", "freemalaysiatoday.com",
         "theedgemalaysia.com", "theborneopost.com", "themalaysianreserve.com", "nst.com.my",
         "utusan.com.my", "malaysiakini.com", "dailyexpress.com.my", "sinarharian.com.my", "kosmo.com.my",
+        "bharian.com.my", "hmetro.com.my"
     ]
 
     trusted_global = [
