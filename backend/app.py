@@ -793,6 +793,7 @@ def register():
         return jsonify({"error": "Username already exists."}), 400
 
 @app.route("/login", methods=["POST"])
+@limiter.limit("5 per minute")   # 🛡️ Brute-force protection
 def login():
     data = request.get_json() or {}
     username = data.get("username")
