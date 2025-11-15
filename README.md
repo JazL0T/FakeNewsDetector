@@ -73,7 +73,7 @@ Please credit the original curators:
    Natural Language Toolkit for Bahasa Malaysia
    [https://github.com/huseinzol05/Malaya](https://github.com/huseinzol05/Malaya)
 
-3. **Abaghyangor — “Fake News Dataset” (Kaggle)**
+3. **Gor Abaghyan — “Fake News Dataset” (Kaggle)**
    [https://www.kaggle.com/datasets/abaghyangor/fake-news-dataset](https://www.kaggle.com/datasets/abaghyangor/fake-news-dataset)
 
 ---
