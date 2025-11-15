@@ -997,18 +997,23 @@ def admin_stats():
 @app.route("/admin/logs", methods=["GET"])
 def admin_logs():
 
-    # Admin token check
     admin, error, code = require_admin()
     if error:
         return error, code
+
+    allowed = ("login", "logout", "register", "scan")  # <-- only these allowed
 
     with get_db_connection() as conn:
         cur = conn.cursor()
         cur.execute("""
             SELECT username, action, time
             FROM logs
+            WHERE LOWER(action) LIKE '%login%'
+               OR LOWER(action) LIKE '%logout%'
+               OR LOWER(action) LIKE '%register%'
+               OR LOWER(action) LIKE '%scan%'
             ORDER BY time DESC
-            LIMIT 100
+            LIMIT 200
         """)
         rows = cur.fetchall()
 
