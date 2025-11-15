@@ -7,12 +7,6 @@
 # ==============================================================
 #  Gevent Compatibility Patch (must be FIRST)
 # ==============================================================
-try:
-    from gevent import monkey
-    monkey.patch_all()
-except Exception:
-    pass
-
 import warnings
 warnings.filterwarnings("ignore", category=SyntaxWarning)
 from concurrent.futures import ThreadPoolExecutor
