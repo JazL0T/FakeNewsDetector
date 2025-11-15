@@ -230,14 +230,34 @@ def create_default_admin():
     admin_user = os.getenv("ADMIN_USERNAME")
     admin_pass = os.getenv("ADMIN_PASSWORD")
 
+    if not admin_user or not admin_pass:
+        print("❌ ADMIN_USERNAME or ADMIN_PASSWORD not set in ENV!")
+        return
+
+    hashed = generate_password_hash(admin_pass)
+
     with sqlite3.connect(app.config["DB_PATH"]) as conn:
         cur = conn.cursor()
 
-        cur.execute("SELECT id FROM users WHERE username=?", (admin_user,))
-        if cur.fetchone():
-            return  # Admin already exists
+        # Check if admin exists
+        cur.execute("SELECT id, username FROM users WHERE is_admin=1")
+        row = cur.fetchone()
 
-        hashed = generate_password_hash(admin_pass)
+        if row:
+            existing_admin = row[1]
+
+            # If admin username changed → rename user
+            if existing_admin != admin_user:
+                cur.execute("UPDATE users SET username=? WHERE id=?", (admin_user, row[0]))
+
+            # Always update password for security
+            cur.execute("UPDATE users SET password=? WHERE id=?", (hashed, row[0]))
+
+            conn.commit()
+            print(f"🔄 Admin updated from ENV: {admin_user}")
+            return
+
+        # If no admin exists → create new one
         cur.execute("""
             INSERT INTO users (username, password, is_admin)
             VALUES (?, ?, 1)
@@ -840,9 +860,8 @@ def admin_delete_user(username):
 
     return jsonify({"message": f"User '{username}' and related scans deleted", "performed_by": admin}), 200
 
-
-@app.route("/admin/delete-scan/<int:scan_id>", methods=["DELETE"])
-def admin_delete_scan(scan_id):
+@app.route("/admin/delete-user/<string:username>", methods=["DELETE"])
+def admin_delete_user(username):
     admin, error, code = require_admin()
     if error:
         return error, code
