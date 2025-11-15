@@ -1056,9 +1056,9 @@ def predict():
         url = data.get("url", "").strip()
 
         if not text:
-            return jsonify({"error": "Missing text"}), 400  # ✅ fixed indentation
+            return jsonify({"error": "Missing text"}), 400
 
-        start_time = time.time()  # ✅ moved correctly inside the function
+        start_time = time.time()
 
         # ==============================================================
         # 🧠 MODEL PREDICTION
@@ -1095,10 +1095,11 @@ def predict():
         )
 
         # ==============================================================
-        # 🎚️ MALAY TRUST CORRECTION
+        # 🎚️ TRUST CORRECTION
         # ==============================================================
         corrected_conf = adjust_confidence(ml["confidence"], article_stats["word_count"])
         final_label = base_label
+
         if trust["category"].startswith("Trusted (Malaysia)") and base_label == "Fake":
             corrected_conf *= 0.6
             final_label = "Likely Real"
@@ -1109,7 +1110,7 @@ def predict():
         lines, reasons = explain_text(text, trust, final_label, ml["model_used"])
 
         # ==============================================================
-        # 🔍 TOP KEYWORDS (TF-IDF Influence)
+        # 🔍 TOP KEYWORDS
         # ==============================================================
         vec = _my_vectorizer if ml["model_used"].lower() == "malay" else _en_vectorizer
         coef = _my_coef if ml["model_used"].lower() == "malay" else _en_coef
@@ -1133,6 +1134,7 @@ def predict():
         # ⚖️ RISK LEVEL
         # ==============================================================
         fake_score = heur.get("fake_score", 0)
+
         if final_label == "Fake":
             risk_level = "High" if corrected_conf > 0.75 or fake_score > 0.5 else "Medium"
         elif final_label == "Likely Real":
@@ -1141,34 +1143,38 @@ def predict():
             risk_level = "Low"
 
         # ==============================================================
-        # 💾 SAVE HISTORY
+        # 💾 SAVE HISTORY + LOG SCAN
         # ==============================================================
-        if username:
-    # 🔥 log scan activity
-    add_log(username, "Performed scan")
+        try:
+            if username:
+                add_log(username, "Performed scan")
 
-    with get_db_connection() as conn:
-        conn.execute("""
-            INSERT INTO scans (username, headline, url, text, prediction, confidence,
-                               heuristics, trustability, language, risk_level, runtime)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            username,
-            headline,
-            url,
-            text,
-            final_label,
-            corrected_conf,
-            json.dumps(heur),
-            json.dumps(trust),
-            ml["language"],
-            risk_level,
-            round(time.time() - start_time, 2)
-        ))
-        conn.commit()
-        
+                with get_db_connection() as conn:
+                    conn.execute("""
+                        INSERT INTO scans (username, headline, url, text, prediction, confidence,
+                                           heuristics, trustability, language, risk_level, runtime)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        username,
+                        headline,
+                        url,
+                        text,
+                        final_label,
+                        corrected_conf,
+                        json.dumps(heur),
+                        json.dumps(trust),
+                        ml["language"],
+                        risk_level,
+                        round(time.time() - start_time, 2)
+                    ))
+                    conn.commit()
+            else:
+                add_log("Guest", "Performed scan")
+        except Exception as e:
+            logging.warning(f"⚠️ Failed to save scan/log: {e}")
+
         # ==============================================================
-        # 📤 RETURN JSON RESPONSE
+        # 📤 RETURN RESPONSE
         # ==============================================================
         return safe_json({
             "version": "2025.11-ENHANCED",
