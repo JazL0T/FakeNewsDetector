@@ -571,26 +571,11 @@ def compute_trustability(url: str) -> dict:
 
     # --- TRUSTED SOURCES ---
     trusted_my = [
-    // 🇲🇾 Malaysian mainstream & official outlets
-    "thestar.com.my",
-    "malaymail.com",
-    "bernama.com",
-    "astroawani.com",
-    "freemalaysiatoday.com",
-    "theedgemalaysia.com",
-    "theborneopost.com",
-    "themalaysianreserve.com",
-    "nst.com.my",
-    "utusan.com.my",
-    "malaysiakini.com",
-    "dailyexpress.com.my",
-    "sinarharian.com.my",
-    "kosmo.com.my",
 
-    // Added trusted Malay-language sources
-    "bharian.com.my",   // Berita Harian
-    "hmetro.com.my"     // Harian Metro
-];
+        "thestar.com.my", "malaymail.com", "bernama.com", "astroawani.com", "freemalaysiatoday.com",
+        "theedgemalaysia.com", "theborneopost.com", "themalaysianreserve.com", "nst.com.my",
+        "utusan.com.my", "malaysiakini.com", "dailyexpress.com.my", "sinarharian.com.my", "kosmo.com.my",
+    ]
 
     trusted_global = [
         # 🌍 Major international outlets
