@@ -199,12 +199,14 @@ def init_db():
         conn.execute("PRAGMA synchronous=NORMAL;")
         c = conn.cursor()
         c.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                password TEXT NOT NULL
-            )
-        """)
+    CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        is_admin INTEGER DEFAULT 0
+    )
+""")
+
         c.execute("""
             CREATE TABLE IF NOT EXISTS scans (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -224,6 +226,22 @@ def init_db():
         """)
         conn.commit()
 
+def create_default_admin():
+    admin_user = "admin"
+    admin_pass = "Admin1234!"
+
+    with sqlite3.connect(app.config["DB_PATH"]) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM users WHERE username=?", (admin_user,))
+        if not cur.fetchone():
+            hashed = generate_password_hash(admin_pass)
+            cur.execute("""
+                INSERT INTO users (username, password, is_admin)
+                VALUES (?, ?, 1)
+            """, (admin_user, hashed))
+            conn.commit()
+            print("✅ Default admin created: admin / Admin1234!")
+
 def get_db_connection():
     """Optimized SQLite connection with better performance and safety."""
     conn = sqlite3.connect(app.config["DB_PATH"], timeout=10, check_same_thread=False)
@@ -236,6 +254,7 @@ def get_db_connection():
     return conn
 
 init_db()
+create_default_admin()
 
 # ============================================================== #
 # UTILITIES
@@ -378,130 +397,6 @@ def predict_fake_news(text: str, url: str = ""):
     )
 
     return result, (used == "Malay")
-
-    # --- Long text: split into manageable chunks ---
-    def chunk_text(text, max_words=700):
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        chunks, current, word_count = [], [], 0
-        for sent in sentences:
-            w = len(sent.split())
-            if word_count + w > max_words and current:
-                chunks.append(" ".join(current))
-                current, word_count = [sent], w
-            else:
-                current.append(sent)
-                word_count += w
-        if current:
-            chunks.append(" ".join(current))
-        return chunks
-
-    chunks = chunk_text(text)
-    chunk_preds, chunk_probs = [], []
-
-    # --- Evaluate each chunk individually ---
-    for chunk in chunks:
-        try:
-            features = vec.transform([chunk])
-            pred = model.predict(features)[0]
-            probs = (
-                model.predict_proba(features)[0]
-                if hasattr(model, "predict_proba")
-                else [0.5, 0.5]
-            )
-            chunk_preds.append(pred)
-            chunk_probs.append(probs)
-        except Exception as e:
-            logging.warning(f"⚠️ Chunk skipped: {e}")
-
-    # --- Aggregate results across chunks ---
-    if not chunk_preds:
-        return {"error": "No valid text processed"}
-
-    avg_probs = [
-        sum(p[i] for p in chunk_probs) / len(chunk_probs)
-        for i in range(2)
-    ]
-    avg_conf = float(max(avg_probs))
-    final_pred = int(avg_probs[1] > avg_probs[0])
-
-    result = {
-        "prediction": str(final_pred),
-        "confidence": avg_conf,
-        "class_probs": {"0": float(avg_probs[0]), "1": float(avg_probs[1])},
-        "model_used": used,
-        "coef_vector": coef,
-        "language": lang,
-        "chunks_analyzed": len(chunks)
-    }
-
-    logging.info(
-        f"🧠 Long article detected ({word_count} words) | "
-        f"{len(chunks)} segments analyzed | Language: {result['language']}"
-    )
-
-    return result, (lang == "ms" and _my_model and _my_vectorizer)
-
-    # --- For long text: split into manageable chunks ---
-    def chunk_text(text, max_words=700):
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        chunks, current, word_count = [], [], 0
-        for sent in sentences:
-            w = len(sent.split())
-            if word_count + w > max_words and current:
-                chunks.append(" ".join(current))
-                current, word_count = [sent], w
-            else:
-                current.append(sent)
-                word_count += w
-        if current:
-            chunks.append(" ".join(current))
-        return chunks
-
-    chunks = chunk_text(text)
-    chunk_preds, chunk_probs = [], []
-
-    # --- Evaluate each chunk individually ---
-    for chunk in chunks:
-        try:
-            features = vec.transform([chunk])
-            pred = model.predict(features)[0]
-            probs = (
-                model.predict_proba(features)[0]
-                if hasattr(model, "predict_proba")
-                else [0.5, 0.5]
-            )
-            chunk_preds.append(pred)
-            chunk_probs.append(probs)
-        except Exception as e:
-            logging.warning(f"⚠️ Chunk skipped: {e}")
-
-    # --- Aggregate results across chunks ---
-    if not chunk_preds:
-        return {"error": "No valid text processed"}
-
-    avg_probs = [
-        sum(p[i] for p in chunk_probs) / len(chunk_probs)
-        for i in range(2)
-    ]
-    avg_conf = float(max(avg_probs))
-    final_pred = int(avg_probs[1] > avg_probs[0])
-
-    result = {
-        "prediction": str(final_pred),
-        "confidence": avg_conf,
-        "class_probs": {"0": float(avg_probs[0]), "1": float(avg_probs[1])},
-        "model_used": used,
-        "coef_vector": coef,
-        "language": "Malay" if lang == "ms" else "English",
-        "chunks_analyzed": len(chunks)
-    }
-
-    logging.info(
-        f"🧠 Long article detected ({word_count} words) | "
-        f"{len(chunks)} segments analyzed | Language: {result['language']}"
-    )
-
-    return result, (lang == "ms" and _my_model and _my_vectorizer)
 
 def analyze_text_heuristics(text: str) -> dict:
     blob = TextBlob(text)
@@ -771,6 +666,23 @@ def verify_jwt(token: str):
 def safe_json(data):
     return jsonify(json.loads(json.dumps(data, default=str)))
 
+def verify_admin(token):
+    try:
+        payload = jwt.decode(token, app.config["JWT_SECRET"], algorithms=["HS256"])
+        return payload.get("is_admin", False)
+    except:
+        return False
+
+def require_admin():
+    token = request.headers.get("Authorization", "").replace("Bearer ", "")
+    try:
+        data = jwt.decode(token, app.config["JWT_SECRET"], algorithms=["HS256"])
+        if not data.get("is_admin"):
+            return None, jsonify({"error": "Admin access required"}), 403
+        return data.get("username"), None, None
+    except Exception:
+        return None, jsonify({"error": "Invalid or missing token"}), 401
+
 # ============================================================== #
 # ROUTES
 # ============================================================== #
@@ -846,16 +758,130 @@ def register():
 @app.route("/login", methods=["POST"])
 def login():
     data = request.get_json() or {}
-    username, password = data.get("username"), data.get("password")
+    username = data.get("username")
+    password = data.get("password")
+
+    if not username or not password:
+        return jsonify({"error": "Missing username or password"}), 400
+
     with get_db_connection() as conn:
         cur = conn.cursor()
-        cur.execute("SELECT password FROM users WHERE username=?", (username,))
+        cur.execute("SELECT password, is_admin FROM users WHERE username=?", (username,))
         row = cur.fetchone()
+
     if not row or not check_password_hash(row[0], password):
         return jsonify({"error": "Invalid credentials"}), 401
-    token = jwt.encode({"username": username, "exp": datetime.utcnow() + timedelta(hours=3)},
-                       app.config["JWT_SECRET"], algorithm="HS256")
-    return jsonify({"token": token, "username": username})
+
+    hashed_password, is_admin = row
+    is_admin = bool(is_admin)
+
+    # 🔐 Create JWT with role included
+    token = jwt.encode({
+        "username": username,
+        "is_admin": is_admin,
+        "exp": datetime.utcnow() + timedelta(hours=3)
+    }, app.config["JWT_SECRET"], algorithm="HS256")
+
+    # Frontend-safe response
+    return jsonify({
+        "token": token,
+        "username": username,
+        "is_admin": is_admin
+    })
+
+@app.route("/admin/users", methods=["GET"])
+def admin_list_users():
+    admin, error, code = require_admin()
+    if error:
+        return error, code
+
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT username, id FROM users ORDER BY id DESC")
+        rows = cur.fetchall()
+
+    return jsonify({
+        "admin": admin,
+        "users": [{"id": r[1], "username": r[0]} for r in rows]
+    })
+
+@app.route("/admin/delete-user/<username>", methods=["DELETE"])
+def admin_delete_user(username):
+    admin, error, code = require_admin()
+if error:
+    return error, code
+
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+
+        # Delete scans first
+        cur.execute("DELETE FROM scans WHERE username=?", (username,))
+        # Delete user
+        cur.execute("DELETE FROM users WHERE username=?", (username,))
+        deleted = cur.rowcount
+
+        conn.commit()
+
+    if deleted == 0:
+        return jsonify({"error": "User not found"}), 404
+
+    return jsonify({
+        "message": f"User '{username}' deleted successfully",
+        "performed_by": admin
+    })
+
+@app.route("/admin/delete-scan/<int:scan_id>", methods=["DELETE"])
+def admin_delete_scan(scan_id):
+    admin, error, code = require_admin()
+if error:
+    return error, code
+
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("DELETE FROM scans WHERE id=?", (scan_id,))
+        deleted = cur.rowcount
+        conn.commit()
+
+    if deleted == 0:
+        return jsonify({"error": "Scan not found"}), 404
+
+    return jsonify({
+        "message": f"Scan {scan_id} deleted successfully",
+        "performed_by": admin
+    })
+
+@app.route("/admin/stats", methods=["GET"])
+def admin_stats():
+    admin, error, code = require_admin()
+if error:
+    return error, code
+
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+
+        cur.execute("SELECT COUNT(*) FROM users")
+        users = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM scans")
+        scans = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM scans WHERE prediction='Fake'")
+        fake_count = cur.fetchone()[0]
+
+        cur.execute("SELECT COUNT(*) FROM scans WHERE prediction='Real'")
+        real_count = cur.fetchone()[0]
+
+    return jsonify({
+        "admin": admin,
+        "stats": {
+            "total_users": users,
+            "total_scans": scans,
+            "fake_scans": fake_count,
+            "real_scans": real_count,
+            "malay_model_loaded": bool(_my_model),
+            "english_model_loaded": bool(_en_model)
+        }
+    })
 
 # --- PREDICT (ENHANCED VERSION) ---
 @app.route("/predict", methods=["POST"])
